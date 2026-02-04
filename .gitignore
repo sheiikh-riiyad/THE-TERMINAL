@@ -1,2 +1,3 @@
-./renderer
-./app.db
+renderer/
+app.db
+node_modules/
