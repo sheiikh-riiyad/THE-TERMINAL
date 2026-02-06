@@ -19,7 +19,7 @@
     "@serialport/parser-readline": "^13.0.0",
     "bcrypt": "^5.1.1",
     "better-sqlite3": "^12.6.2",
-    "electron-updater": "^6.3.0",
+    "electron-updater": "^6.7.3",
     "serialport": "^13.0.0",
     "xlsx": "^0.18.5"
   },
@@ -28,9 +28,9 @@
     "productName": "The Terminal",
     "publish": [
       {
-        "provider": "appdevloper.com",
-        "owner": "YOUR_GITHUB_USER",
-        "repo": "YOUR_REPO"
+        "provider": "github",
+        "owner": "sheiikh-riiyad",
+        "repo": "THE-TERMINAL"
       }
     ]
   }

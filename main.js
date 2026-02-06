@@ -76,8 +76,8 @@ function createWindow() {
     }
   })
   // const indexPath = path.join(__dirname, "renderer", "build", "index.html");
-  // mainWindow.loadFile(indexPath)
-  mainWindow.loadURL('http://localhost:3000/')
+  mainWindow.loadFile("./renderer/build/index.html")
+  // mainWindow.loadURL('http://localhost:3000/')
   
 }
 
