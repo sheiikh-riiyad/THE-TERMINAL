@@ -11,12 +11,27 @@
   "license": "ISC",
   "description": "",
   "devDependencies": {
-    "electron": "^40.0.0"
+    "electron": "^40.0.0",
+    "electron-builder": "^26.0.0",
+    "nodemon": "^3.1.11"
   },
   "dependencies": {
+    "@serialport/parser-readline": "^13.0.0",
     "bcrypt": "^5.1.1",
     "better-sqlite3": "^12.6.2",
-    "nodemon": "^3.1.11",
-    "serialport": "^13.0.0"
+    "electron-updater": "^6.3.0",
+    "serialport": "^13.0.0",
+    "xlsx": "^0.18.5"
+  },
+  "build": {
+    "appId": "appdevloper.com",
+    "productName": "The Terminal",
+    "publish": [
+      {
+        "provider": "appdevloper.com",
+        "owner": "YOUR_GITHUB_USER",
+        "repo": "YOUR_REPO"
+      }
+    ]
   }
 }

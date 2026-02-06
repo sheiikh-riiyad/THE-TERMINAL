@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain } = require('electron')
+const { autoUpdater } = require('electron-updater')
 const path = require('path')
 const { SerialPort } = require('serialport')
 const Database = require('better-sqlite3')
@@ -12,10 +13,62 @@ let lastWeight = 0
 let db = null
 let currentUser = null
 
+function sendUpdateStatus(payload) {
+  if (mainWindow) {
+    mainWindow.webContents.send('updates:status', payload)
+  }
+  if (loginWindow) {
+    loginWindow.webContents.send('updates:status', payload)
+  }
+}
+
+function initAutoUpdater() {
+  if (!app.isPackaged) {
+    return
+  }
+
+  autoUpdater.autoDownload = false
+
+  autoUpdater.on('checking-for-update', () => {
+    sendUpdateStatus({ state: 'checking' })
+  })
+
+  autoUpdater.on('update-available', (info) => {
+    sendUpdateStatus({ state: 'available', info })
+  })
+
+  autoUpdater.on('update-not-available', (info) => {
+    sendUpdateStatus({ state: 'none', info })
+  })
+
+  autoUpdater.on('error', (error) => {
+    sendUpdateStatus({ state: 'error', message: error?.message || String(error) })
+  })
+
+  autoUpdater.on('download-progress', (progress) => {
+    sendUpdateStatus({
+      state: 'downloading',
+      percent: progress.percent,
+      transferred: progress.transferred,
+      total: progress.total,
+      bytesPerSecond: progress.bytesPerSecond
+    })
+  })
+
+  autoUpdater.on('update-downloaded', (info) => {
+    sendUpdateStatus({ state: 'downloaded', info })
+  })
+
+  autoUpdater.checkForUpdates().catch((error) => {
+    sendUpdateStatus({ state: 'error', message: error?.message || String(error) })
+  })
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1000,
     height: 700,
+    icon: path.join(__dirname, 'terminal.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -35,6 +88,7 @@ function createLoginWindow() {
     resizable: true,
     minimizable: true,
     maximizable: true,
+    icon: path.join(__dirname, 'terminal.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -59,6 +113,8 @@ function initDb() {
       productname TEXT,
       userid INTEGER,
       username TEXT,
+      createdate TEXT,
+      printed INTEGER,
       specification INTEGER,
       packingtype TEXT,
       fee INTEGER,
@@ -118,6 +174,12 @@ function initDb() {
       driveraddress TEXT
     )
   `)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS packingtype_details (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      packingtype TEXT
+    )
+  `)
   const userColumns = db.prepare('PRAGMA table_info(user_details)').all()
   const userColumnNames = new Set(userColumns.map((col) => col.name))
   if (!userColumnNames.has('password_hash')) {
@@ -141,11 +203,18 @@ function initDb() {
   if (!columnNames.has('username')) {
     db.exec('ALTER TABLE weighments ADD COLUMN username TEXT')
   }
+  if (!columnNames.has('createdate')) {
+    db.exec('ALTER TABLE weighments ADD COLUMN createdate TEXT')
+  }
+  if (!columnNames.has('printed')) {
+    db.exec('ALTER TABLE weighments ADD COLUMN printed INTEGER')
+  }
 }
 
 app.whenReady().then(() => {
   initDb()
   createLoginWindow()
+  initAutoUpdater()
 })
 
 /* -------- SCALE LOGIC -------- */
@@ -162,21 +231,22 @@ ipcMain.handle('start-scale', async () => {
   }
 
   try {
-    console.log('🚀 Starting scale connection...')
+    // console.log('🚀 Starting scale connection...')
     
     port = new SerialPort({
       path: '/dev/ttyUSB0',
-      baudRate: 9600,
+      baudRate: 1200,
       dataBits: 8,
       stopBits: 1,
       parity: 'none',
       autoOpen: false
     })
 
-    let buffer = ''
+    let buffer = Buffer.alloc(0)
+    let textBuffer = ''
 
     port.on('open', () => {
-      console.log('✅ Scale port opened')
+      // console.log('✅ Scale port opened')
       
       // Start polling every 300ms
       pollInterval = setInterval(() => {
@@ -201,10 +271,11 @@ ipcMain.handle('start-scale', async () => {
 
     port.on('error', (err) => {
       console.error('❌ Serial error:', err.message)
+      // console.log( "the data" + data)
     })
 
     port.on('close', () => {
-      console.log('🔌 Port closed')
+      // console.log('🔌 Port closed')
       if (pollInterval) {
         clearInterval(pollInterval)
         pollInterval = null
@@ -222,7 +293,7 @@ ipcMain.handle('start-scale', async () => {
         // Extract frame
         const frame = buffer.substring(startIndex + 1, endIndex)
         
-        console.log('🎯 Frame found:', frame)
+        // console.log('🎯 Frame found:', frame)
         
         // Parse the frame
         parseWeight(frame)
@@ -254,7 +325,7 @@ ipcMain.handle('start-scale', async () => {
           const rawWeight = parseInt(digits, 10)
           
           if (isNaN(rawWeight)) {
-            console.log('❌ Failed to parse digits:', digits)
+            // console.log('❌ Failed to parse digits:', digits)
             return
           }
           
@@ -289,7 +360,7 @@ ipcMain.handle('start-scale', async () => {
           if (Math.abs(finalWeight - lastWeight) > 0.001) {
             lastWeight = finalWeight
             
-            console.log(`⚖️ Weight: ${finalWeight.toFixed(decimalMode)} kg (${decimalMode} decimals)`)
+            // console.log(`⚖️ Weight: ${finalWeight.toFixed(decimalMode)} kg (${decimalMode} decimals)`)
             
             // Send to React
             if (mainWindow) {
@@ -297,7 +368,7 @@ ipcMain.handle('start-scale', async () => {
             }
           }
         } else {
-          console.log('⚠️ Frame too short:', frame)
+          // console.log('⚠️ Frame too short:', frame)
         }
       } catch (error) {
         console.error('Error parsing weight:', error)
@@ -342,6 +413,8 @@ ipcMain.handle('db:create', (_event, payload) => {
       productname,
       userid,
       username,
+      createdate,
+      printed,
       specification,
       packingtype,
       fee,
@@ -351,8 +424,9 @@ ipcMain.handle('db:create', (_event, payload) => {
       secondweightdate,
       netweight,
       avarage
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
+  const createdDate = data.createdate ?? new Date().toISOString().split('T')[0]
   const info = stmt.run(
     data.drivername ?? null,
     data.trucknumber ?? null,
@@ -361,6 +435,8 @@ ipcMain.handle('db:create', (_event, payload) => {
     data.productname ?? null,
     normalizeInt(data.userid),
     data.username ?? null,
+    createdDate,
+    normalizeInt(data.printed),
     normalizeInt(data.specification),
     data.packingtype ?? null,
     normalizeInt(data.fee),
@@ -380,6 +456,30 @@ ipcMain.handle('db:list', () => {
   }
   const stmt = db.prepare('SELECT * FROM weighments ORDER BY id DESC')
   return stmt.all()
+})
+
+ipcMain.handle('db:list:unprinted', () => {
+  if (!db) {
+    throw new Error('Database not initialized')
+  }
+  const stmt = db.prepare('SELECT * FROM weighments WHERE printed IS NULL OR printed = 0 ORDER BY id DESC')
+  return stmt.all()
+})
+
+ipcMain.handle('db:list:printed', () => {
+  if (!db) {
+    throw new Error('Database not initialized')
+  }
+  const stmt = db.prepare('SELECT * FROM weighments WHERE printed = 1 ORDER BY id DESC')
+  return stmt.all()
+})
+
+ipcMain.handle('db:max-id', () => {
+  if (!db) {
+    throw new Error('Database not initialized')
+  }
+  const row = db.prepare('SELECT MAX(id) as maxId FROM weighments').get()
+  return { maxId: row?.maxId ?? null }
 })
 
 ipcMain.handle('db:delete', (_event, id) => {
@@ -409,6 +509,8 @@ ipcMain.handle('db:update', (_event, payload) => {
       productname = ?,
       userid = ?,
       username = ?,
+      createdate = ?,
+      printed = ?,
       specification = ?,
       packingtype = ?,
       fee = ?,
@@ -428,6 +530,8 @@ ipcMain.handle('db:update', (_event, payload) => {
     data?.productname ?? null,
     normalizeInt(data?.userid),
     data?.username ?? null,
+    data?.createdate ?? null,
+    normalizeInt(data?.printed),
     normalizeInt(data?.specification),
     data?.packingtype ?? null,
     normalizeInt(data?.fee),
@@ -510,6 +614,14 @@ ipcMain.handle('db:user:list', () => {
     throw new Error('Database not initialized')
   }
   return db.prepare('SELECT * FROM user_details ORDER BY id DESC').all()
+})
+
+ipcMain.handle('db:user:get', (_event, id) => {
+  if (!db) {
+    throw new Error('Database not initialized')
+  }
+  const row = db.prepare('SELECT id, username, email, contact, role, photo FROM user_details WHERE id = ?').get(Number(id))
+  return row || null
 })
 
 ipcMain.handle('db:user:update', (_event, payload) => {
@@ -731,6 +843,54 @@ ipcMain.handle('db:driver:delete', (_event, id) => {
   return { changes: info.changes }
 })
 
+ipcMain.handle('db:packingtype:create', (_event, payload) => {
+  if (!db) {
+    throw new Error('Database not initialized')
+  }
+  const data = payload || {}
+  const info = db.prepare(`
+    INSERT INTO packingtype_details (packingtype)
+    VALUES (?)
+  `).run(
+    data.packingtype ?? null
+  )
+  return { id: info.lastInsertRowid }
+})
+
+ipcMain.handle('db:packingtype:list', () => {
+  if (!db) {
+    throw new Error('Database not initialized')
+  }
+  return db.prepare('SELECT * FROM packingtype_details ORDER BY id DESC').all()
+})
+
+ipcMain.handle('db:packingtype:update', (_event, payload) => {
+  if (!db) {
+    throw new Error('Database not initialized')
+  }
+  const { id, data } = payload || {}
+  if (!id) {
+    throw new Error('Missing id for update')
+  }
+  const info = db.prepare(`
+    UPDATE packingtype_details
+    SET packingtype = ?
+    WHERE id = ?
+  `).run(
+    data?.packingtype ?? null,
+    Number(id)
+  )
+  return { changes: info.changes }
+})
+
+ipcMain.handle('db:packingtype:delete', (_event, id) => {
+  if (!db) {
+    throw new Error('Database not initialized')
+  }
+  const info = db.prepare('DELETE FROM packingtype_details WHERE id = ?').run(Number(id))
+  return { changes: info.changes }
+})
+
 ipcMain.handle('auth:login', (_event, payload) => {
   if (!db) {
     throw new Error('Database not initialized')
@@ -771,6 +931,40 @@ ipcMain.handle('auth:current', () => {
   return currentUser
 })
 
+/* -------- AUTO UPDATE -------- */
+
+ipcMain.handle('updates:check', async () => {
+  if (!app.isPackaged) {
+    return { ok: false, message: 'Updates are only available in packaged builds.' }
+  }
+  try {
+    const result = await autoUpdater.checkForUpdates()
+    return { ok: true, info: result?.updateInfo ?? null }
+  } catch (error) {
+    return { ok: false, message: error?.message || String(error) }
+  }
+})
+
+ipcMain.handle('updates:download', async () => {
+  if (!app.isPackaged) {
+    return { ok: false, message: 'Updates are only available in packaged builds.' }
+  }
+  try {
+    await autoUpdater.downloadUpdate()
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, message: error?.message || String(error) }
+  }
+})
+
+ipcMain.handle('updates:quitAndInstall', () => {
+  if (!app.isPackaged) {
+    return { ok: false, message: 'Updates are only available in packaged builds.' }
+  }
+  autoUpdater.quitAndInstall()
+  return { ok: true }
+})
+
 // Force 2 decimal mode
 ipcMain.handle('start-scale-2dec', async () => {
   if (port && port.isOpen) {
@@ -781,7 +975,7 @@ ipcMain.handle('start-scale-2dec', async () => {
   }
 
   try {
-    console.log('🔢 Starting 2 decimal mode...')
+    // console.log('🔢 Starting 2 decimal mode...')
     
     port = new SerialPort({
       path: '/dev/ttyUSB0',
@@ -791,10 +985,11 @@ ipcMain.handle('start-scale-2dec', async () => {
       parity: 'none'
     })
 
-    let buffer = ''
+    let buffer = Buffer.alloc(0)
+    let textBuffer = ''
 
     port.on('open', () => {
-      console.log('✅ Scale connected (2 decimal mode)')
+      // console.log('✅ Scale connected (2 decimal mode)')
       
       pollInterval = setInterval(() => {
         if (port.isOpen) {
@@ -804,43 +999,87 @@ ipcMain.handle('start-scale-2dec', async () => {
     })
 
     port.on('data', (data) => {
-      const str = data.toString('ascii')
-      buffer += str
-      
-      // Find frames
-      const start = buffer.indexOf('\x02')
-      const end = buffer.indexOf('\x03')
-      
-      if (start !== -1 && end !== -1) {
-        const frame = buffer.substring(start + 1, end)
-        
-        if (frame.length >= 9) {
-          const sign = frame[0]
-          const digits = frame.substring(1, 10)
-          const rawWeight = parseInt(digits, 10)
-          
-          // Always divide by 100 (2 decimal places)
-          let finalWeight = rawWeight / 100
-          if (sign === '-') finalWeight = -finalWeight
-          
-          // Only update if changed
-          if (Math.abs(finalWeight - lastWeight) > 0.01) {
+      // Show exactly what "screen /dev/ttyUSB0 9600" would show
+      const asciiChunk = data.toString('ascii')
+      process.stdout.write(asciiChunk)
+
+      buffer = Buffer.concat([buffer, data])
+      textBuffer += asciiChunk
+
+      // Parse "screen" format like: +00000001B+
+      const screenPattern = /([+-])(\d{6})(\d{2})([A-Za-z])\+/
+      let match = textBuffer.match(screenPattern)
+      while (match) {
+        const sign = match[1] === '-' ? -1 : 1
+        const valueStr = match[2]
+        const rawValue = parseInt(valueStr, 10)
+        if (!Number.isNaN(rawValue)) {
+          const divisor = Math.pow(10, SCALE_DECIMAL_POS)
+          const finalWeight = (rawValue / divisor) * sign
+          const epsilon = 1 / Math.pow(10, Math.max(SCALE_DECIMAL_POS, 0))
+          if (Math.abs(finalWeight - lastWeight) >= epsilon) {
             lastWeight = finalWeight
-            console.log(`⚖️ ${finalWeight.toFixed(2)} kg`)
-            
+            // console.log(`⚖️ ${finalWeight.toFixed(SCALE_DECIMAL_POS)} kg`)
             if (mainWindow) {
               mainWindow.webContents.send('scale-data', finalWeight)
             }
           }
         }
-        
-        // Clear buffer
-        buffer = buffer.substring(end + 1)
+
+        const idx = textBuffer.indexOf(match[0])
+        textBuffer = textBuffer.slice(idx + match[0].length)
+        match = textBuffer.match(screenPattern)
       }
-      
-      // Clean buffer
-      if (buffer.length > 50) {
-        buffer = buffer.substring(buffer.length - 20)
+
+      if (textBuffer.length > 128) {
+        textBuffer = textBuffer.slice(-64)
+      }
+
+      while (true) {
+        const start = buffer.indexOf(0x02)
+        if (start === -1) {
+          if (buffer.length > 64) {
+            buffer = buffer.slice(-32)
+          }
+          break
+        }
+        const end = buffer.indexOf(0x03, start + 1)
+        if (end === -1) {
+          if (start > 0) {
+            buffer = buffer.slice(start)
+          }
+          break
+        }
+
+        const frame = buffer.slice(start + 1, end)
+        buffer = buffer.slice(end + 1)
+
+        // XK3190-D10 frame (continuous): sign + 6 digits + decimal pos + XOR high + XOR low
+        if (frame.length < 10) {
+          continue
+        }
+
+        const signChar = String.fromCharCode(frame[0])
+        const sign = signChar === '-' ? -1 : 1
+        const digitsStr = frame.slice(1, 7).toString('ascii')
+        const decimalPosStr = String.fromCharCode(frame[7])
+
+        if (!/^[0-9]{6}$/.test(digitsStr) || !/^[0-4]$/.test(decimalPosStr)) {
+          continue
+        }
+
+        const rawWeight = parseInt(digitsStr, 10)
+        const decimalPos = parseInt(decimalPosStr, 10)
+        const finalWeight = (rawWeight / Math.pow(10, decimalPos)) * sign
+
+        const epsilon = 1 / Math.pow(10, Math.max(decimalPos, 0))
+        if (Math.abs(finalWeight - lastWeight) >= epsilon) {
+          lastWeight = finalWeight
+          // console.log(`⚖️ ${finalWeight.toFixed(decimalPos)} kg`)
+          if (mainWindow) {
+            mainWindow.webContents.send('scale-data', finalWeight)
+          }
+        }
       }
     })
 
@@ -861,7 +1100,7 @@ ipcMain.handle('start-scale-3dec', async () => {
   }
 
   try {
-    console.log('🔢 Starting 3 decimal mode...')
+    // console.log('🔢 Starting 3 decimal mode...')
     
     port = new SerialPort({
       path: '/dev/ttyUSB0',
@@ -874,7 +1113,7 @@ ipcMain.handle('start-scale-3dec', async () => {
     let buffer = ''
 
     port.on('open', () => {
-      console.log('✅ Scale connected (3 decimal mode)')
+      // console.log('✅ Scale connected (3 decimal mode)')
       
       pollInterval = setInterval(() => {
         if (port.isOpen) {
@@ -886,7 +1125,7 @@ ipcMain.handle('start-scale-3dec', async () => {
     port.on('data', (data) => {
       const str = data.toString('ascii')
       buffer += str
-       console.log("======================data=========================>", data)
+      //  console.log("======================data=========================>", data)
       const start = buffer.indexOf('\x02')
       const end = buffer.indexOf('\x03')
       
@@ -904,7 +1143,7 @@ ipcMain.handle('start-scale-3dec', async () => {
           
           if (Math.abs(finalWeight - lastWeight) > 0.001) {
             lastWeight = finalWeight
-            console.log(`⚖️ ${finalWeight.toFixed(3)} kg`)
+            // console.log(`⚖️ ${finalWeight.toFixed(3)} kg`)
             
             if (mainWindow) {
               mainWindow.webContents.send('scale-data', finalWeight)
@@ -918,7 +1157,7 @@ ipcMain.handle('start-scale-3dec', async () => {
       if (buffer.length > 50) {
         buffer = buffer.substring(buffer.length - 20)
       }
-      console.log("======================data=========================>", data)
+      // console.log("======================data=========================>", data)
     })
 
     return 'Scale started (3 decimals)'
@@ -940,7 +1179,7 @@ ipcMain.handle('stop-scale', () => {
   }
   
   lastWeight = 0
-  console.log('🛑 Scale stopped')
+  // console.log('🛑 Scale stopped')
   return 'Scale stopped'
 })
 
@@ -950,7 +1189,7 @@ ipcMain.handle('test-scale', async () => {
     return 'Scale not connected'
   }
   
-  console.log('🧪 Testing scale communication...')
+  // console.log('🧪 Testing scale communication...')
   
   // Send various commands
   const commands = [
@@ -963,7 +1202,7 @@ ipcMain.handle('test-scale', async () => {
   commands.forEach((cmd, index) => {
     setTimeout(() => {
       port.write(cmd)
-      console.log(`Sent command ${index + 1}`)
+      // console.log(`Sent command ${index + 1}`)
     }, index * 1000)
   })
   
