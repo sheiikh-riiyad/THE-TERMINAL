@@ -243,7 +243,7 @@ ipcMain.handle('start-scale', async () => {
     // console.log('🚀 Starting scale connection...')
     
     port = new SerialPort({
-      path: '/dev/ttyUSB0',
+      path: 'COM4',
       baudRate: 1200,
       dataBits: 8,
       stopBits: 1,
