@@ -1,5 +1,5 @@
 {
-  "name": "electronjs",
+  "name": "the-terminal",
   "version": "1.0.0",
   "main": "main.js",
   "scripts": {
@@ -7,7 +7,10 @@
     "start": "electron . --no-sandbox"
   },
   "keywords": [],
-  "author": "",
+  "author": {
+    "name": "sheikh riyad",
+    "email": "riiyad.san1819@gmail.com"
+  },
   "license": "ISC",
   "description": "",
   "devDependencies": {
@@ -26,6 +29,15 @@
   "build": {
     "appId": "appdevloper.com",
     "productName": "The Terminal",
+    "icon": "build/icon.png",
+    "linux": {
+      "executableName": "the-terminal",
+      "desktop": {
+        "entry": {
+          "Name": "The Terminal"
+        }
+      }
+    },
     "publish": [
       {
         "provider": "github",

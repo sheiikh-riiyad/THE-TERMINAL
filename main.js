@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, nativeImage } = require('electron')
 const { autoUpdater } = require('electron-updater')
 const path = require('path')
 const { SerialPort } = require('serialport')
@@ -12,6 +12,9 @@ let pollInterval = null
 let lastWeight = 0
 let db = null
 let currentUser = null
+const iconPath = path.join(__dirname, 'terminal.png')
+const appIcon = nativeImage.createFromPath(iconPath)
+
 
 function sendUpdateStatus(payload) {
   if (mainWindow) {
@@ -68,13 +71,16 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1000,
     height: 700,
-    icon: path.join(__dirname, 'terminal.ico'),
+    icon: appIcon,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true
     }
   })
+  if (!appIcon.isEmpty()) {
+    mainWindow.setIcon(appIcon)
+  }
   // const indexPath = path.join(__dirname, "renderer", "build", "index.html");
   mainWindow.loadFile("./renderer/build/index.html")
   // mainWindow.loadURL('http://localhost:3000/')
@@ -88,13 +94,16 @@ function createLoginWindow() {
     resizable: true,
     minimizable: true,
     maximizable: true,
-    icon: path.join(__dirname, 'terminal.ico'),
+    icon: appIcon,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true
     }
   })
+  if (!appIcon.isEmpty()) {
+    loginWindow.setIcon(appIcon)
+  }
   loginWindow.loadFile(path.join(__dirname, 'login.html'))
 }
 
