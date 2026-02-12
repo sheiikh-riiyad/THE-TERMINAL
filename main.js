@@ -14,6 +14,23 @@ let db = null
 let currentUser = null
 const iconPath = path.join(__dirname, 'terminal.png')
 const appIcon = nativeImage.createFromPath(iconPath)
+const SCALE_PORT = process.platform === 'win32' ? 'COM3' : '/dev/ttyUSB0'
+
+async function resolveScalePort() {
+  try {
+    const ports = await SerialPort.list()
+    if (Array.isArray(ports) && ports.length > 0) {
+      if (process.platform === 'win32') {
+        const winPort = ports.find((p) => String(p.path || '').toUpperCase().startsWith('COM'))
+        if (winPort?.path) return winPort.path
+      }
+      return ports[0].path || SCALE_PORT
+    }
+  } catch (error) {
+    console.error('Failed to list serial ports:', error)
+  }
+  return SCALE_PORT
+}
 
 
 function sendUpdateStatus(payload) {
@@ -82,8 +99,8 @@ function createWindow() {
     mainWindow.setIcon(appIcon)
   }
   // const indexPath = path.join(__dirname, "renderer", "build", "index.html");
-  mainWindow.loadFile("./renderer/build/index.html")
-  // mainWindow.loadURL('http://localhost:3000/')
+  // mainWindow.loadFile("./renderer/build/index.html")
+  mainWindow.loadURL('http://localhost:3000/')
   
 }
 
@@ -240,10 +257,11 @@ ipcMain.handle('start-scale', async () => {
   }
 
   try {
-    // console.log('🚀 Starting scale connection...')
+    console.log('🚀 Starting scale connection...')
     
+    const scalePath = await resolveScalePort()
     port = new SerialPort({
-      path: 'COM4',
+      path: scalePath,
       baudRate: 1200,
       dataBits: 8,
       stopBits: 1,
@@ -407,6 +425,7 @@ function normalizeInt(value) {
   const num = Number(value)
   return Number.isFinite(num) ? Math.trunc(num) : null
 }
+
 
 ipcMain.handle('db:create', (_event, payload) => {
   if (!db) {
@@ -986,8 +1005,9 @@ ipcMain.handle('start-scale-2dec', async () => {
   try {
     // console.log('🔢 Starting 2 decimal mode...')
     
+    const scalePath = await resolveScalePort()
     port = new SerialPort({
-      path: '/dev/ttyUSB0',
+      path: scalePath,
       baudRate: 9600,
       dataBits: 8,
       stopBits: 1,
@@ -1111,8 +1131,9 @@ ipcMain.handle('start-scale-3dec', async () => {
   try {
     // console.log('🔢 Starting 3 decimal mode...')
     
+    const scalePath = await resolveScalePort()
     port = new SerialPort({
-      path: '/dev/ttyUSB0',
+      path: scalePath,
       baudRate: 9600,
       dataBits: 8,
       stopBits: 1,
