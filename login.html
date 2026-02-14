@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Login</title>
+    <title>Access</title>
     <style>
       :root {
         --bg: #0f172a;
@@ -13,10 +13,9 @@
         --accent: #38bdf8;
         --accent-dark: #0ea5e9;
         --error: #f87171;
+        --ok: #4ade80;
       }
-      * {
-        box-sizing: border-box;
-      }
+      * { box-sizing: border-box; }
       body {
         margin: 0;
         font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
@@ -25,33 +24,40 @@
         display: grid;
         place-items: center;
         min-height: 100vh;
+        padding: 16px;
       }
       .card {
         width: 100%;
-        max-width: 360px;
+        max-width: 460px;
         background: var(--card);
         border-radius: 16px;
         padding: 28px;
         box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
         border: 1px solid rgba(148, 163, 184, 0.2);
       }
-      h1 {
-        margin: 0 0 8px;
-        font-size: 22px;
-        font-weight: 700;
+      h1 { margin: 0 0 8px; font-size: 22px; font-weight: 700; }
+      p  { margin: 0 0 18px; color: var(--muted); font-size: 13px; }
+      .badge {
+        display: inline-block;
+        margin-bottom: 14px;
+        font-size: 11px;
+        border-radius: 999px;
+        padding: 5px 10px;
+        background: rgba(56, 189, 248, 0.15);
+        border: 1px solid rgba(56, 189, 248, 0.45);
       }
-      p {
-        margin: 0 0 20px;
-        color: var(--muted);
-        font-size: 13px;
+      .product-code {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        margin-bottom: 14px;
       }
-      label {
-        display: block;
-        font-size: 12px;
-        margin: 10px 0 6px;
-        color: var(--muted);
+      .product-code input {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        letter-spacing: 1px;
       }
-      input {
+      label { display: block; font-size: 12px; margin: 10px 0 6px; color: var(--muted); }
+      input, textarea {
         width: 100%;
         padding: 10px 12px;
         border-radius: 10px;
@@ -61,13 +67,14 @@
         font-size: 14px;
         outline: none;
       }
-      input:focus {
+      textarea { min-height: 88px; resize: vertical; }
+      input:focus, textarea:focus {
         border-color: var(--accent);
         box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
       }
       .btn {
         width: 100%;
-        margin-top: 16px;
+        margin-top: 14px;
         padding: 10px 12px;
         border: 0;
         border-radius: 10px;
@@ -77,40 +84,249 @@
         cursor: pointer;
         font-size: 14px;
       }
-      .btn:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
+      .btn.secondary {
+        margin-top: 8px;
+        background: rgba(148, 163, 184, 0.16);
       }
-      .error {
-        margin-top: 12px;
+      .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+      .hidden { display: none; }
+      .message { margin-top: 12px; min-height: 18px; font-size: 12px; }
+      .message.error { color: var(--error); }
+      .message.ok { color: var(--ok); }
+      .remaining {
+        margin-top: 4px;
+        margin-bottom: 8px;
         font-size: 12px;
-        color: var(--error);
-        min-height: 16px;
+        color: var(--muted);
+      }
+      .remaining strong {
+        color: var(--ok);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       }
     </style>
   </head>
   <body>
     <div class="card">
-      <h1>Sign In</h1>
-      <p>Use your email and password to continue.</p>
-      <form id="login-form">
-        <label for="email">Email</label>
-        <input id="email" type="email" autocomplete="username" required />
-        <label for="password">Password</label>
-        <input id="password" type="password" autocomplete="current-password" required />
-        <button class="btn" type="submit" id="submit-btn">Login</button>
-        <div class="error" id="error"></div>
-      </form>
+      <span class="badge" id="state-badge">Loading</span>
+
+      <section id="license-section" class="hidden">
+        <h1>Activate License</h1>
+        <p>Send product code to vendor and enter the license code received.</p>
+        <label for="product-code">Product Code</label>
+        <div class="product-code">
+          <input id="product-code" type="text" readonly />
+          <button class="btn secondary" id="copy-code-btn" type="button">Copy</button>
+        </div>
+        <label for="license-code">License Code</label>
+        <textarea id="license-code" placeholder="Paste signed license code"></textarea>
+        <button class="btn" id="activate-btn" type="button">Activate</button>
+        <div class="message" id="license-message"></div>
+      </section>
+
+      <section id="admin-section" class="hidden">
+        <h1>Create Super Admin</h1>
+        <p>No admin user found. Create first super admin account.</p>
+        <label for="admin-username">Username</label>
+        <input id="admin-username" type="text" autocomplete="name" />
+        <label for="admin-email">Email</label>
+        <input id="admin-email" type="email" autocomplete="username" />
+        <label for="admin-contact">Contact</label>
+        <input id="admin-contact" type="text" autocomplete="tel" />
+        <label for="admin-password">Password</label>
+        <input id="admin-password" type="password" autocomplete="new-password" />
+        <button class="btn" id="create-admin-btn" type="button">Create Super Admin</button>
+        <div class="message" id="admin-message"></div>
+      </section>
+
+      <section id="login-section" class="hidden">
+        <h1>Sign In</h1>
+        <p>Use your email and password to continue.</p>
+        <div class="remaining" id="remaining-wrap">License remaining: <strong id="remaining-time">--</strong></div>
+        <form id="login-form">
+          <label for="email">Email</label>
+          <input id="email" type="email" autocomplete="username" required />
+          <label for="password">Password</label>
+          <input id="password" type="password" autocomplete="current-password" required />
+          <button class="btn" type="submit" id="submit-btn">Login</button>
+          <div class="message" id="login-message"></div>
+        </form>
+      </section>
     </div>
 
     <script>
-      const form = document.getElementById('login-form');
-      const errorEl = document.getElementById('error');
-      const submitBtn = document.getElementById('submit-btn');
+      const stateBadge = document.getElementById('state-badge');
+      const licenseSection = document.getElementById('license-section');
+      const adminSection = document.getElementById('admin-section');
+      const loginSection = document.getElementById('login-section');
 
-      form.addEventListener('submit', async (event) => {
+      const productCodeInput = document.getElementById('product-code');
+      const copyCodeBtn = document.getElementById('copy-code-btn');
+      const licenseCodeInput = document.getElementById('license-code');
+      const activateBtn = document.getElementById('activate-btn');
+      const licenseMessage = document.getElementById('license-message');
+
+      const createAdminBtn = document.getElementById('create-admin-btn');
+      const adminMessage = document.getElementById('admin-message');
+
+      const loginForm = document.getElementById('login-form');
+      const loginMessage = document.getElementById('login-message');
+      const submitBtn = document.getElementById('submit-btn');
+      const remainingWrap = document.getElementById('remaining-wrap');
+      const remainingTime = document.getElementById('remaining-time');
+      let remainingInterval = null;
+
+      function clearRemainingTimer() {
+        if (remainingInterval) {
+          clearInterval(remainingInterval);
+          remainingInterval = null;
+        }
+      }
+
+      function formatRemaining(ms) {
+        if (!Number.isFinite(ms) || ms <= 0) return 'Expired';
+        const totalSeconds = Math.floor(ms / 1000);
+        const days = Math.floor(totalSeconds / 86400);
+        const hours = Math.floor((totalSeconds % 86400) / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        return `${days}d ${hours}h ${minutes}m ${seconds}s`;
+      }
+
+      function renderRemaining(expiresAt) {
+        clearRemainingTimer();
+        if (!expiresAt) {
+          remainingWrap.style.display = 'none';
+          return;
+        }
+        remainingWrap.style.display = 'block';
+        const expiryTime = new Date(expiresAt).getTime();
+        const update = () => {
+          const remainingMs = expiryTime - Date.now();
+          remainingTime.textContent = formatRemaining(remainingMs);
+          remainingTime.style.color = remainingMs > 0 ? 'var(--ok)' : 'var(--error)';
+        };
+        update();
+        remainingInterval = setInterval(update, 1000);
+      }
+
+      function setMessage(el, text, type) {
+        el.textContent = text || '';
+        el.className = 'message' + (type ? ' ' + type : '');
+      }
+
+      function renderState(context) {
+        clearRemainingTimer();
+        licenseSection.classList.add('hidden');
+        adminSection.classList.add('hidden');
+        loginSection.classList.add('hidden');
+
+        if (!context) {
+          stateBadge.textContent = 'Error';
+          return;
+        }
+
+        if (context.needsLicense) {
+          stateBadge.textContent = 'License Required';
+          productCodeInput.value = context.productCode || '';
+          setMessage(licenseMessage, context.license?.message || '', context.license?.active ? 'ok' : 'error');
+          licenseSection.classList.remove('hidden');
+          return;
+        }
+
+        if (context.needsAdmin) {
+          stateBadge.textContent = 'Setup Admin';
+          setMessage(adminMessage, '', '');
+          adminSection.classList.remove('hidden');
+          return;
+        }
+
+        stateBadge.textContent = 'Login';
+        setMessage(loginMessage, '', '');
+        renderRemaining(context.license?.expiresAt || context.expiresAt || null);
+        loginSection.classList.remove('hidden');
+      }
+
+      async function refreshContext() {
+        try {
+          const context = await window.electronAPI.authBootstrap();
+          renderState(context);
+          return context;
+        } catch (error) {
+          stateBadge.textContent = 'Error';
+          setMessage(licenseMessage, 'Failed to read startup state.', 'error');
+          licenseSection.classList.remove('hidden');
+          return null;
+        }
+      }
+
+      copyCodeBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(productCodeInput.value || '');
+          setMessage(licenseMessage, 'Product code copied.', 'ok');
+        } catch (error) {
+          setMessage(licenseMessage, 'Copy failed. Copy manually.', 'error');
+        }
+      });
+
+      activateBtn.addEventListener('click', async () => {
+        const licenseCode = licenseCodeInput.value.trim();
+        if (!licenseCode) {
+          setMessage(licenseMessage, 'License code is required.', 'error');
+          return;
+        }
+        activateBtn.disabled = true;
+        setMessage(licenseMessage, '', '');
+        try {
+          const result = await window.electronAPI.activateLicense(licenseCode);
+          if (!result || !result.ok) {
+            setMessage(licenseMessage, result?.message || 'Activation failed.', 'error');
+            return;
+          }
+          setMessage(licenseMessage, 'License activated successfully.', 'ok');
+          await refreshContext();
+        } catch (error) {
+          setMessage(licenseMessage, 'Activation failed.', 'error');
+        } finally {
+          activateBtn.disabled = false;
+        }
+      });
+
+      createAdminBtn.addEventListener('click', async () => {
+        const username = document.getElementById('admin-username').value.trim();
+        const email = document.getElementById('admin-email').value.trim();
+        const contact = document.getElementById('admin-contact').value.trim();
+        const password = document.getElementById('admin-password').value;
+
+        if (!username || !email || !password) {
+          setMessage(adminMessage, 'Username, email and password are required.', 'error');
+          return;
+        }
+
+        createAdminBtn.disabled = true;
+        setMessage(adminMessage, '', '');
+        try {
+          const result = await window.electronAPI.createInitialAdmin({
+            username,
+            email,
+            contact,
+            password
+          });
+          if (!result || !result.ok) {
+            setMessage(adminMessage, result?.message || 'Failed to create admin.', 'error');
+            return;
+          }
+          setMessage(adminMessage, 'Super admin created. Please sign in.', 'ok');
+          await refreshContext();
+        } catch (error) {
+          setMessage(adminMessage, 'Failed to create admin.', 'error');
+        } finally {
+          createAdminBtn.disabled = false;
+        }
+      });
+
+      loginForm.addEventListener('submit', async (event) => {
         event.preventDefault();
-        errorEl.textContent = '';
+        setMessage(loginMessage, '', '');
         submitBtn.disabled = true;
 
         const email = document.getElementById('email').value.trim();
@@ -119,14 +335,16 @@
         try {
           const result = await window.electronAPI.login(email, password);
           if (!result || !result.ok) {
-            errorEl.textContent = (result && result.message) || 'Login failed.';
+            setMessage(loginMessage, (result && result.message) || 'Login failed.', 'error');
           }
         } catch (error) {
-          errorEl.textContent = 'Login failed.';
+          setMessage(loginMessage, 'Login failed.', 'error');
         } finally {
           submitBtn.disabled = false;
         }
       });
+
+      refreshContext();
     </script>
   </body>
 </html>

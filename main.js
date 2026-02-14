@@ -1,6 +1,9 @@
 const { app, BrowserWindow, ipcMain, nativeImage } = require('electron')
 const { autoUpdater } = require('electron-updater')
+const fs = require('fs')
 const path = require('path')
+const os = require('os')
+const crypto = require('crypto')
 const { SerialPort } = require('serialport')
 const Database = require('better-sqlite3')
 const bcrypt = require('bcrypt')
@@ -12,9 +15,146 @@ let pollInterval = null
 let lastWeight = 0
 let db = null
 let currentUser = null
-const iconPath = path.join(__dirname, 'terminal2.ico')
+const iconPath = path.join(__dirname, 'app.png')
 const appIcon = nativeImage.createFromPath(iconPath)
 const SCALE_PORT = process.platform === 'win32' ? 'COM3 , COM4'  : '/dev/ttyUSB0'
+const LICENSE_PUBLIC_KEY_PEM = (() => {
+  const envKey = process.env.LICENSE_PUBLIC_KEY_PEM
+  if (envKey && envKey.trim()) return envKey
+  const localKeyPath = path.join(__dirname, 'license_public.pem')
+  if (fs.existsSync(localKeyPath)) {
+    return fs.readFileSync(localKeyPath, 'utf8')
+  }
+  return ''
+})()
+
+function toBase64Url(buffer) {
+  return Buffer.from(buffer)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '')
+}
+
+function fromBase64Url(value) {
+  const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/')
+  const padding = normalized.length % 4 ? '='.repeat(4 - (normalized.length % 4)) : ''
+  return Buffer.from(normalized + padding, 'base64')
+}
+
+function getMachineFingerprint() {
+  const parts = [
+    os.hostname(),
+    os.platform(),
+    os.arch(),
+    os.userInfo().username
+  ]
+  return crypto.createHash('sha256').update(parts.join('|')).digest('hex')
+}
+
+function getProductCode() {
+  const raw = crypto
+    .createHash('sha256')
+    .update(`THE-TERMINAL|${getMachineFingerprint()}`)
+    .digest('hex')
+    .toUpperCase()
+  return [raw.slice(0, 6), raw.slice(6, 12), raw.slice(12, 18), raw.slice(18, 24)].join('-')
+}
+
+function verifyLicenseCode(licenseCode) {
+  if (!LICENSE_PUBLIC_KEY_PEM) {
+    return { ok: false, message: 'License public key is not configured.' }
+  }
+  const pieces = String(licenseCode || '').trim().split('.')
+  if (pieces.length !== 2) {
+    return { ok: false, message: 'Invalid license code format.' }
+  }
+  const [payloadB64, signatureB64] = pieces
+  let payload
+  try {
+    payload = JSON.parse(fromBase64Url(payloadB64).toString('utf8'))
+  } catch (_error) {
+    return { ok: false, message: 'Invalid license payload.' }
+  }
+  let signature
+  try {
+    signature = fromBase64Url(signatureB64)
+  } catch (_error) {
+    return { ok: false, message: 'Invalid license signature.' }
+  }
+
+  const validSignature = crypto.verify(
+    null,
+    Buffer.from(payloadB64, 'utf8'),
+    LICENSE_PUBLIC_KEY_PEM,
+    signature
+  )
+  if (!validSignature) {
+    return { ok: false, message: 'License signature validation failed.' }
+  }
+
+  const expectedProductCode = getProductCode()
+  if (payload.productCode !== expectedProductCode) {
+    return { ok: false, message: 'License does not match this machine.' }
+  }
+
+  const expiresAt = payload.expiresAt ? new Date(payload.expiresAt) : null
+  if (expiresAt && Number.isNaN(expiresAt.getTime())) {
+    return { ok: false, message: 'License expiry date is invalid.' }
+  }
+  if (expiresAt && expiresAt.getTime() < Date.now()) {
+    return { ok: false, message: 'License is expired.', payload }
+  }
+
+  return { ok: true, payload }
+}
+
+function getLicenseRow() {
+  if (!db) return null
+  return db.prepare('SELECT * FROM license_state WHERE id = 1').get() || null
+}
+
+function getLicenseStatus() {
+  const row = getLicenseRow()
+  if (!row || !row.licensecode) {
+    return { active: false, message: 'License not activated.' }
+  }
+  const result = verifyLicenseCode(row.licensecode)
+  if (!result.ok) {
+    return { active: false, message: result.message }
+  }
+  return {
+    active: true,
+    message: 'License active.',
+    payload: result.payload,
+    expiresAt: result.payload?.expiresAt || null
+  }
+}
+
+function hasAdminUser() {
+  if (!db) return false
+  const row = db.prepare(
+    "SELECT id FROM user_details WHERE lower(role) IN ('admin', 'super admin') LIMIT 1"
+  ).get()
+  return Boolean(row)
+}
+
+function getBootstrapContext() {
+  const productCode = getProductCode()
+  const license = getLicenseStatus()
+  const adminExists = hasAdminUser()
+  const needsLicense = !license.active
+  const needsAdmin = license.active && !adminExists
+  const canLogin = license.active && adminExists
+  return {
+    productCode,
+    license,
+    adminExists,
+    needsLicense,
+    needsAdmin,
+    canLogin
+  }
+}
 
 async function resolveScalePort() {
   try {
@@ -98,9 +238,9 @@ function createWindow() {
   if (!appIcon.isEmpty()) {
     mainWindow.setIcon(appIcon)
   }
-  const indexPath = path.join(__dirname, "renderer", "build", "index.html");
-  mainWindow.loadFile("./renderer/build/index.html")
-  // mainWindow.loadURL('http://localhost:3000/')
+  // const indexPath = path.join(__dirname, "renderer", "build", "index.html");
+  // mainWindow.loadFile("./renderer/build/index.html")
+  mainWindow.loadURL('http://localhost:3000/')
   
 }
 
@@ -204,6 +344,17 @@ function initDb() {
     CREATE TABLE IF NOT EXISTS packingtype_details (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       packingtype TEXT
+    )
+  `)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS license_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      productcode TEXT,
+      licensecode TEXT,
+      payload TEXT,
+      status TEXT,
+      activatedat TEXT,
+      expiresat TEXT
     )
   `)
   const userColumns = db.prepare('PRAGMA table_info(user_details)').all()
@@ -923,6 +1074,13 @@ ipcMain.handle('auth:login', (_event, payload) => {
   if (!db) {
     throw new Error('Database not initialized')
   }
+  const licenseStatus = getLicenseStatus()
+  if (!licenseStatus.active) {
+    return { ok: false, message: licenseStatus.message || 'License is not active.' }
+  }
+  if (!hasAdminUser()) {
+    return { ok: false, message: 'Create super admin user first.' }
+  }
   const { email, password } = payload || {}
   if (!email || !password) {
     return { ok: false, message: 'Email and password are required.' }
@@ -957,6 +1115,72 @@ ipcMain.handle('auth:login', (_event, payload) => {
 
 ipcMain.handle('auth:current', () => {
   return currentUser
+})
+
+ipcMain.handle('auth:bootstrap', () => {
+  return getBootstrapContext()
+})
+
+ipcMain.handle('license:activate', (_event, payload) => {
+  if (!db) {
+    throw new Error('Database not initialized')
+  }
+  const licenseCode = String(payload?.licenseCode || '').trim()
+  if (!licenseCode) {
+    return { ok: false, message: 'License code is required.' }
+  }
+  const verification = verifyLicenseCode(licenseCode)
+  if (!verification.ok) {
+    return { ok: false, message: verification.message }
+  }
+
+  const productCode = getProductCode()
+  const nowIso = new Date().toISOString()
+  const expiresAt = verification.payload?.expiresAt || null
+  const payloadJson = JSON.stringify(verification.payload || {})
+
+  db.prepare(`
+    INSERT INTO license_state (id, productcode, licensecode, payload, status, activatedat, expiresat)
+    VALUES (1, ?, ?, ?, 'active', ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      productcode = excluded.productcode,
+      licensecode = excluded.licensecode,
+      payload = excluded.payload,
+      status = excluded.status,
+      activatedat = excluded.activatedat,
+      expiresat = excluded.expiresat
+  `).run(productCode, licenseCode, payloadJson, nowIso, expiresAt)
+
+  return { ok: true, context: getBootstrapContext() }
+})
+
+ipcMain.handle('auth:create-initial-admin', (_event, payload) => {
+  if (!db) {
+    throw new Error('Database not initialized')
+  }
+  const context = getBootstrapContext()
+  if (!context.license.active) {
+    return { ok: false, message: 'Activate license first.' }
+  }
+  if (context.adminExists) {
+    return { ok: false, message: 'Admin user already exists.' }
+  }
+
+  const username = String(payload?.username || '').trim()
+  const email = String(payload?.email || '').trim()
+  const password = String(payload?.password || '')
+  const contact = String(payload?.contact || '').trim()
+  if (!username || !email || !password) {
+    return { ok: false, message: 'Username, email and password are required.' }
+  }
+
+  const passwordHash = bcrypt.hashSync(password, 10)
+  db.prepare(`
+    INSERT INTO user_details (username, email, contact, role, photo, password_hash)
+    VALUES (?, ?, ?, 'super admin', NULL, ?)
+  `).run(username, email, contact || null, passwordHash)
+
+  return { ok: true, context: getBootstrapContext() }
 })
 
 /* -------- AUTO UPDATE -------- */

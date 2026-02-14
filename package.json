@@ -4,11 +4,12 @@
   "main": "main.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "electron ."
+    "start": "electron .",
+    "license:keypair": "node scripts/generate-license-keypair.js"
   },
   "keywords": [],
   "author": {
-    "name": "sheikh riyad",
+    "name": "appdevloper.com",
     "email": "riiyad.san1819@gmail.com"
   }, 
   "license": "ISC",

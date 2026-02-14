@@ -44,6 +44,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dbPackingTypeList: () => ipcRenderer.invoke('db:packingtype:list'),
   dbPackingTypeUpdate: (id, data) => ipcRenderer.invoke('db:packingtype:update', { id, data }),
   dbPackingTypeDelete: (id) => ipcRenderer.invoke('db:packingtype:delete', id),
+  authBootstrap: () => ipcRenderer.invoke('auth:bootstrap'),
+  activateLicense: (licenseCode) => ipcRenderer.invoke('license:activate', { licenseCode }),
+  createInitialAdmin: (data) => ipcRenderer.invoke('auth:create-initial-admin', data),
   login: (email, password) => ipcRenderer.invoke('auth:login', { email, password }),
   currentUser: () => ipcRenderer.invoke('auth:current'),
 
