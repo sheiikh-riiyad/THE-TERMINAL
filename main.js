@@ -12,9 +12,9 @@ let pollInterval = null
 let lastWeight = 0
 let db = null
 let currentUser = null
-const iconPath = path.join(__dirname, 'terminal.png')
+const iconPath = path.join(__dirname, 'terminal2.ico')
 const appIcon = nativeImage.createFromPath(iconPath)
-const SCALE_PORT = process.platform === 'win32' ? 'COM3' : '/dev/ttyUSB0'
+const SCALE_PORT = process.platform === 'win32' ? 'COM3 , COM4'  : '/dev/ttyUSB0'
 
 async function resolveScalePort() {
   try {
@@ -98,9 +98,9 @@ function createWindow() {
   if (!appIcon.isEmpty()) {
     mainWindow.setIcon(appIcon)
   }
-  // const indexPath = path.join(__dirname, "renderer", "build", "index.html");
-  // mainWindow.loadFile("./renderer/build/index.html")
-  mainWindow.loadURL('http://localhost:3000/')
+  const indexPath = path.join(__dirname, "renderer", "build", "index.html");
+  mainWindow.loadFile("./renderer/build/index.html")
+  // mainWindow.loadURL('http://localhost:3000/')
   
 }
 

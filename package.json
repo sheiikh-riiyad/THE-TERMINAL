@@ -29,7 +29,7 @@
   "build": {
     "appId": "appdevloper.com",
     "productName": "The Terminal",
-    "icon": "build/icon.png",
+    "icon": "build/terminal.ico",
     "linux": {
       "executableName": "the-terminal",
       "desktop": {
