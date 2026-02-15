@@ -2,30 +2,14 @@
 product key
 96B98A-F181AC-BF2672-83E328
 
+npm run license:keypair
+Create 2 files in project root:
+license_public.pem
+license_private.pem
 
 
 
-stubborn-developer@STUBBORN-DEVELOPER:~/Web/electronJS$ npm run license:keypair
-
-> the-terminal@1.0.1 license:keypair
-> node scripts/generate-license-keypair.js
-
-PUBLIC_KEY_PEM_START
------BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEA+rQt5+QuEFtoBgvcRZRMcZeK7wTlKYpe99nTR6WGOD8=
------END PUBLIC KEY-----
-
-PUBLIC_KEY_PEM_END
-PRIVATE_KEY_PEM_START
------BEGIN PRIVATE KEY-----
-MC4CAQAwBQYDK2VwBCIEIG6EkMf+NwB4jdY+fu1O0ssZ2uFtNQ5fX8sKIQsxwC7Q
------END PRIVATE KEY-----
-
-PRIVATE_KEY_PEM_END
-
-
-
-node scripts/generate-license-code.js license_private.pem 96B98A-F181AC-BF2672-83E328 2026-02-14T19:46:44Z "Client A"
+node scripts/generate-license-code.js license_private.pem 96B98A-F181AC-BF2672-83E328 2026-03-14T19:46:44Z "tarm"
 
 date -u -d "+1 minute" +"%Y-%m-%dT%H:%M:%SZ"
 
