@@ -1,6 +1,6 @@
 {
   "name": "the-terminal",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "main": "main.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -11,7 +11,7 @@
   "author": {
     "name": "appdevloper.com",
     "email": "riiyad.san1819@gmail.com"
-  }, 
+  },
   "license": "ISC",
   "description": "",
   "devDependencies": {
