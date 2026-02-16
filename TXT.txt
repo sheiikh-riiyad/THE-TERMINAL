@@ -9,7 +9,7 @@ license_private.pem
 
 
 
-node scripts/generate-license-code.js license_private.pem 96B98A-F181AC-BF2672-83E328 2026-03-14T19:46:44Z "tarm"
+node scripts/generate-license-code.js license_private.pem EEF80D-DDD76E-43413B-7A6013 2026-03-14T19:46:44Z "tarm"
 
 date -u -d "+1 minute" +"%Y-%m-%dT%H:%M:%SZ"
 

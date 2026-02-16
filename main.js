@@ -17,7 +17,7 @@ let db = null
 let currentUser = null
 const iconPath = path.join(__dirname, 'app.png')
 const appIcon = nativeImage.createFromPath(iconPath)
-const SCALE_PORT = process.platform === 'win32' ? 'COM3 , COM4'  : '/dev/ttyUSB0'
+const SCALE_PORT = process.platform === 'win32' ? 'COM3 , COM4, COM2, COM1'  : '/dev/ttyUSB0'
 const LICENSE_PUBLIC_KEY_PEM = (() => {
   const envKey = process.env.LICENSE_PUBLIC_KEY_PEM
   if (envKey && envKey.trim()) return envKey
@@ -238,9 +238,10 @@ function createWindow() {
   if (!appIcon.isEmpty()) {
     mainWindow.setIcon(appIcon)
   }
-  // const indexPath = path.join(__dirname, "renderer", "build", "index.html");
-  // mainWindow.loadFile("./renderer/build/index.html")
-  mainWindow.loadURL('http://localhost:3000/')
+  const indexPath = path.join(__dirname, "renderer", "build", "index.html");
+  mainWindow.loadFile("./renderer/build/index.html")
+  
+  // mainWindow.loadURL('http://localhost:3000/')
   
 }
 
