@@ -18,6 +18,7 @@ let currentUser = null
 const iconPath = path.join(__dirname, 'app.png')
 const appIcon = nativeImage.createFromPath(iconPath)
 const SCALE_PORT = process.platform === 'win32' ? 'COM3 , COM4, COM2, COM1'  : '/dev/ttyUSB0'
+const SCALE_DECIMAL_POS = 2
 const LICENSE_PUBLIC_KEY_PEM = (() => {
   const envKey = process.env.LICENSE_PUBLIC_KEY_PEM
   if (envKey && envKey.trim()) return envKey
@@ -239,7 +240,7 @@ function createWindow() {
     mainWindow.setIcon(appIcon)
   }
   const indexPath = path.join(__dirname, "renderer", "build", "index.html");
-  mainWindow.loadFile("./renderer/build/index.html")
+  mainWindow.loadFile(indexPath)
   
   // mainWindow.loadURL('http://localhost:3000/')
   
@@ -265,9 +266,38 @@ function createLoginWindow() {
   loginWindow.loadFile(path.join(__dirname, 'login.html'))
 }
 
+function resolveDbPath() {
+  // Keep DB in a user-writable persistent folder so app updates do not remove it.
+  const userDataDir = app.getPath('userData')
+  fs.mkdirSync(userDataDir, { recursive: true })
+
+  const persistentDbPath = path.join(userDataDir, 'app.db')
+  if (fs.existsSync(persistentDbPath)) {
+    return persistentDbPath
+  }
+
+  // One-time migration from legacy locations (install dir / app dir).
+  const legacyCandidates = [
+    path.join(path.dirname(app.getPath('exe')), 'app.db'),
+    path.join(__dirname, 'app.db')
+  ]
+
+  for (const legacyPath of legacyCandidates) {
+    if (!legacyPath || legacyPath === persistentDbPath) continue
+    if (!fs.existsSync(legacyPath)) continue
+    try {
+      fs.copyFileSync(legacyPath, persistentDbPath)
+      return persistentDbPath
+    } catch (error) {
+      console.error('Failed to migrate database from legacy path:', legacyPath, error)
+    }
+  }
+
+  return persistentDbPath
+}
+
 function initDb() {
-  const baseDir = app.isPackaged ? path.dirname(app.getPath('exe')) : __dirname
-  const dbPath = path.join(baseDir, 'app.db')
+  const dbPath = resolveDbPath()
   db = new Database(dbPath)
   db.pragma('journal_mode = WAL')
   db.exec(`
