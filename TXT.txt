@@ -13,3 +13,4 @@ node scripts/generate-license-code.js license_private.pem EEF80D-DDD76E-43413B-7
 
 date -u -d "+1 minute" +"%Y-%m-%dT%H:%M:%SZ"
 
+npx electron-builder --win nsis
