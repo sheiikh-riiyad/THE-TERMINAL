@@ -306,7 +306,7 @@ function getInstalledBaseDir() {
 }
 
 function getDbBackupDir() {
-  return path.join(getInstalledBaseDir(), 'db-backup')
+  return path.join(app.getPath('desktop'), 'The-Terminal-Backup')
 }
 
 function ensureDbBackupDir() {
