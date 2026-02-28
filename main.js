@@ -14,7 +14,12 @@ let port = null
 let pollInterval = null
 let lastWeight = 0
 let db = null
+let dbFilePath = ''
 let currentUser = null
+let dbBackupWatcher = null
+let dbBackupTimer = null
+let dbBackupInProgress = false
+let dbBackupQueued = false
 const iconPath = path.join(__dirname, 'app.png')
 const appIcon = nativeImage.createFromPath(iconPath)
 const SCALE_PORT = process.platform === 'win32' ? 'COM3 , COM4, COM2, COM1'  : '/dev/ttyUSB0'
@@ -296,9 +301,100 @@ function resolveDbPath() {
   return persistentDbPath
 }
 
+function getInstalledBaseDir() {
+  return app.isPackaged ? path.dirname(app.getPath('exe')) : __dirname
+}
+
+function getDbBackupDir() {
+  return path.join(getInstalledBaseDir(), 'db-backup')
+}
+
+function ensureDbBackupDir() {
+  const backupDir = getDbBackupDir()
+  fs.mkdirSync(backupDir, { recursive: true })
+  return backupDir
+}
+
+function syncBackupFile(sourcePath, destinationPath) {
+  if (fs.existsSync(sourcePath)) {
+    fs.copyFileSync(sourcePath, destinationPath)
+    return
+  }
+  if (fs.existsSync(destinationPath)) {
+    fs.unlinkSync(destinationPath)
+  }
+}
+
+function createDbBackup(reason = 'auto') {
+  if (!dbFilePath) return
+  if (dbBackupInProgress) {
+    dbBackupQueued = true
+    return
+  }
+
+  dbBackupInProgress = true
+  try {
+    const backupDir = ensureDbBackupDir()
+    syncBackupFile(dbFilePath, path.join(backupDir, 'app.db'))
+    syncBackupFile(`${dbFilePath}-wal`, path.join(backupDir, 'app.db-wal'))
+    syncBackupFile(`${dbFilePath}-shm`, path.join(backupDir, 'app.db-shm'))
+  } catch (error) {
+    console.error('Failed to create DB backup:', error)
+  } finally {
+    dbBackupInProgress = false
+    if (dbBackupQueued) {
+      dbBackupQueued = false
+      scheduleDbBackup('queued')
+    }
+  }
+}
+
+function scheduleDbBackup(reason = 'change', delayMs = 250) {
+  if (dbBackupTimer) {
+    clearTimeout(dbBackupTimer)
+  }
+  dbBackupTimer = setTimeout(() => {
+    createDbBackup(reason)
+  }, delayMs)
+}
+
+function initDbBackupWatcher() {
+  if (!dbFilePath) return
+  const watchDir = path.dirname(dbFilePath)
+  try {
+    dbBackupWatcher = fs.watch(watchDir, { persistent: false }, (_eventType, filename) => {
+      const name = String(filename || '').toLowerCase()
+      if (name === 'app.db' || name === 'app.db-wal' || name === 'app.db-shm') {
+        scheduleDbBackup(`watch-${name}`)
+      }
+    })
+  } catch (error) {
+    console.error('Failed to start DB backup watcher:', error)
+  }
+}
+
+function attachDbWriteBackupHook() {
+  if (!db || db.__backupHookAttached) return
+  const rawPrepare = db.prepare.bind(db)
+  db.prepare = (...args) => {
+    const stmt = rawPrepare(...args)
+    if (stmt && typeof stmt.run === 'function' && !stmt.__runBackupWrapped) {
+      const rawRun = stmt.run.bind(stmt)
+      stmt.run = (...runArgs) => {
+        const result = rawRun(...runArgs)
+        scheduleDbBackup('db-write')
+        return result
+      }
+      stmt.__runBackupWrapped = true
+    }
+    return stmt
+  }
+  db.__backupHookAttached = true
+}
+
 function initDb() {
-  const dbPath = resolveDbPath()
-  db = new Database(dbPath)
+  dbFilePath = resolveDbPath()
+  db = new Database(dbFilePath)
   db.pragma('journal_mode = WAL')
   db.exec(`
     CREATE TABLE IF NOT EXISTS weighments (
@@ -417,6 +513,9 @@ function initDb() {
   if (!columnNames.has('printed')) {
     db.exec('ALTER TABLE weighments ADD COLUMN printed INTEGER')
   }
+  attachDbWriteBackupHook()
+  initDbBackupWatcher()
+  scheduleDbBackup('startup', 1000)
 }
 
 app.whenReady().then(() => {
@@ -1497,4 +1596,13 @@ ipcMain.handle('test-scale', async () => {
 app.on('before-quit', () => {
   if (pollInterval) clearInterval(pollInterval)
   if (port && port.isOpen) port.close()
+  if (dbBackupWatcher) {
+    dbBackupWatcher.close()
+    dbBackupWatcher = null
+  }
+  if (dbBackupTimer) {
+    clearTimeout(dbBackupTimer)
+    dbBackupTimer = null
+  }
+  createDbBackup('before-quit')
 })
