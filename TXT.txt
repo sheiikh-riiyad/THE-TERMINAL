@@ -10,5 +10,6 @@ license_private
 node scripts/generate-license-code.js license_private.pem 96B98A-F181AC-BF2672-83E328 2026-07-10T18:35:10Z "tarm"
 
 date -u -d "+1 month" +"%Y-%m-%dT%H:%M:%SZ"
+a
 
 npx electron-builder --win nsis
