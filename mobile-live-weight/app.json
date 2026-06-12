@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "The Terminal Live",
+    "slug": "the-terminal-live",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "the-terminal",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow The Terminal Live to scan terminal pairing QR codes.",
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": true
+        }
+      ]
+    ],
+    "ios": {
+      "bundleIdentifier": "com.appdevloper.terminallive",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.appdevloper.terminallive",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}

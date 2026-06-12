@@ -4,7 +4,11 @@
   "main": "main.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "electron .",
+    "start": "electron --ozone-platform=x11 .",
+    "start:sim": "SIMULATE_SCALE=1 electron --ozone-platform=x11 .",
+    "mobile:start": "npm --prefix mobile-live-weight run start",
+    "mobile:android": "npm --prefix mobile-live-weight run android",
+    "mobile:web": "npm --prefix mobile-live-weight run web",
     "license:keypair": "node scripts/generate-license-keypair.js"
   },
   "keywords": [],
@@ -24,6 +28,8 @@
     "bcrypt": "^5.1.1",
     "better-sqlite3": "^12.6.2",
     "electron-updater": "^6.7.3",
+    "firebase": "^12.14.0",
+    "qrcode": "^1.5.4",
     "serialport": "^13.0.0",
     "xlsx": "^0.18.5"
   },

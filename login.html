@@ -89,6 +89,95 @@
         background: rgba(148, 163, 184, 0.16);
       }
       .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+      .text-btn {
+        width: 100%;
+        margin-top: 10px;
+        border: 0;
+        background: transparent;
+        color: var(--accent);
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .text-btn:hover { color: var(--accent-dark); }
+      .account-summary {
+        margin: 10px 0 12px;
+        border-radius: 10px;
+        padding: 10px 12px;
+        background: rgba(56, 189, 248, 0.1);
+        border: 1px solid rgba(56, 189, 248, 0.25);
+        color: var(--text);
+        font-size: 13px;
+      }
+      .account-summary strong {
+        display: block;
+        margin-top: 3px;
+        color: var(--accent);
+        word-break: break-word;
+      }
+      .qr-panel {
+        margin-top: 18px;
+        padding: 14px;
+        border-radius: 12px;
+        background: rgba(15, 23, 42, 0.55);
+        border: 1px solid rgba(148, 163, 184, 0.22);
+      }
+      .qr-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+      .qr-title {
+        margin: 0;
+        color: var(--text);
+        font-size: 14px;
+        font-weight: 700;
+      }
+      .qr-subtitle {
+        margin: 3px 0 0;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .qr-code-wrap {
+        display: grid;
+        place-items: center;
+        min-height: 188px;
+        border-radius: 12px;
+        background: #ffffff;
+        padding: 10px;
+      }
+      .qr-code-wrap img {
+        width: 180px;
+        height: 180px;
+        display: block;
+        image-rendering: pixelated;
+      }
+      .qr-placeholder {
+        color: #64748b;
+        font-size: 12px;
+      }
+      .qr-meta {
+        margin-top: 10px;
+        padding: 9px 10px;
+        border-radius: 10px;
+        background: rgba(148, 163, 184, 0.1);
+        color: var(--muted);
+        font-size: 11px;
+        word-break: break-all;
+      }
+      .qr-meta strong {
+        display: block;
+        margin-top: 4px;
+        color: var(--accent);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      .qr-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
       .hidden { display: none; }
       .message { margin-top: 12px; min-height: 18px; font-size: 12px; }
       .message.error { color: var(--error); }
@@ -165,8 +254,63 @@
           <label for="password">Password</label>
           <input id="password" type="password" autocomplete="current-password" required />
           <button class="btn" type="submit" id="submit-btn">Login</button>
+          <button class="text-btn" id="forgot-password-btn" type="button">Forgot password?</button>
           <div class="message" id="login-message"></div>
         </form>
+        <div class="qr-panel">
+          <div class="qr-header">
+            <div>
+              <div class="qr-title">Mobile Live Weight</div>
+              <div class="qr-subtitle">Pair this installed device with mobile app.</div>
+            </div>
+          </div>
+          <div class="qr-code-wrap" id="mobile-qr-wrap">
+            <div class="qr-placeholder" id="mobile-qr-placeholder">Loading QR...</div>
+            <img id="mobile-qr-image" alt="Mobile live weight pairing QR" class="hidden" />
+          </div>
+          <div class="qr-meta">
+            Product Code
+            <strong id="mobile-qr-product-code">--</strong>
+          </div>
+          <div class="qr-meta">
+            Status Path
+            <strong id="mobile-qr-status-path">--</strong>
+          </div>
+          <div class="qr-actions">
+            <button class="btn secondary" id="mobile-qr-refresh-btn" type="button">Refresh QR</button>
+            <button class="btn secondary" id="mobile-qr-copy-btn" type="button">Copy Data</button>
+          </div>
+          <div class="message" id="mobile-qr-message"></div>
+        </div>
+      </section>
+
+      <section id="forgot-section" class="hidden">
+        <h1>Forgot Password</h1>
+        <p>Enter account email to continue.</p>
+        <label for="forgot-email">Email</label>
+        <input id="forgot-email" type="email" autocomplete="username" />
+        <button class="btn" id="forgot-search-btn" type="button">Search</button>
+        <button class="btn secondary" id="forgot-back-btn" type="button">Back to Login</button>
+        <div class="message" id="forgot-message"></div>
+      </section>
+
+      <section id="forgot-otp-section" class="hidden">
+        <h1>One Time Password</h1>
+        <p>Account found. Continue with OTP verification.</p>
+        <div class="account-summary">
+          Email
+          <strong id="forgot-otp-email">--</strong>
+        </div>
+        <label for="forgot-otp-code">OTP Code</label>
+        <input id="forgot-otp-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="8" />
+        <label for="forgot-new-password">New Password</label>
+        <input id="forgot-new-password" type="password" autocomplete="new-password" />
+        <label for="forgot-confirm-password">Confirm Password</label>
+        <input id="forgot-confirm-password" type="password" autocomplete="new-password" />
+        <button class="btn" id="forgot-send-otp-btn" type="button">Send OTP</button>
+        <button class="btn secondary" id="forgot-reset-btn" type="button">Reset Password</button>
+        <button class="btn secondary" id="forgot-otp-back-btn" type="button">Back</button>
+        <div class="message" id="forgot-otp-message"></div>
       </section>
 
       <div class="product-meta">
@@ -181,6 +325,8 @@
       const licenseSection = document.getElementById('license-section');
       const adminSection = document.getElementById('admin-section');
       const loginSection = document.getElementById('login-section');
+      const forgotSection = document.getElementById('forgot-section');
+      const forgotOtpSection = document.getElementById('forgot-otp-section');
 
       const productCodeInput = document.getElementById('product-code');
       const copyCodeBtn = document.getElementById('copy-code-btn');
@@ -196,13 +342,62 @@
       const submitBtn = document.getElementById('submit-btn');
       const remainingWrap = document.getElementById('remaining-wrap');
       const remainingTime = document.getElementById('remaining-time');
+      const forgotPasswordBtn = document.getElementById('forgot-password-btn');
+      const forgotEmailInput = document.getElementById('forgot-email');
+      const forgotSearchBtn = document.getElementById('forgot-search-btn');
+      const forgotBackBtn = document.getElementById('forgot-back-btn');
+      const forgotMessage = document.getElementById('forgot-message');
+      const forgotOtpEmail = document.getElementById('forgot-otp-email');
+      const forgotOtpCode = document.getElementById('forgot-otp-code');
+      const forgotNewPassword = document.getElementById('forgot-new-password');
+      const forgotConfirmPassword = document.getElementById('forgot-confirm-password');
+      const forgotSendOtpBtn = document.getElementById('forgot-send-otp-btn');
+      const forgotResetBtn = document.getElementById('forgot-reset-btn');
+      const forgotOtpBackBtn = document.getElementById('forgot-otp-back-btn');
+      const forgotOtpMessage = document.getElementById('forgot-otp-message');
+      const mobileQrPlaceholder = document.getElementById('mobile-qr-placeholder');
+      const mobileQrImage = document.getElementById('mobile-qr-image');
+      const mobileQrProductCode = document.getElementById('mobile-qr-product-code');
+      const mobileQrStatusPath = document.getElementById('mobile-qr-status-path');
+      const mobileQrRefreshBtn = document.getElementById('mobile-qr-refresh-btn');
+      const mobileQrCopyBtn = document.getElementById('mobile-qr-copy-btn');
+      const mobileQrMessage = document.getElementById('mobile-qr-message');
       let remainingInterval = null;
+      let forgotAccount = null;
+      let forgotOtpCooldownInterval = null;
+      let forgotOtpCooldownRemaining = 0;
+      let mobilePairingText = '';
 
       function clearRemainingTimer() {
         if (remainingInterval) {
           clearInterval(remainingInterval);
           remainingInterval = null;
         }
+      }
+
+      function clearForgotOtpCooldown() {
+        if (forgotOtpCooldownInterval) {
+          clearInterval(forgotOtpCooldownInterval);
+          forgotOtpCooldownInterval = null;
+        }
+        forgotOtpCooldownRemaining = 0;
+        forgotSendOtpBtn.disabled = false;
+        forgotSendOtpBtn.textContent = 'Send OTP';
+      }
+
+      function startForgotOtpCooldown(seconds = 45) {
+        clearForgotOtpCooldown();
+        forgotOtpCooldownRemaining = seconds;
+        forgotSendOtpBtn.disabled = true;
+        forgotSendOtpBtn.textContent = `Send OTP (${forgotOtpCooldownRemaining}s)`;
+        forgotOtpCooldownInterval = setInterval(() => {
+          forgotOtpCooldownRemaining -= 1;
+          if (forgotOtpCooldownRemaining <= 0) {
+            clearForgotOtpCooldown();
+            return;
+          }
+          forgotSendOtpBtn.textContent = `Send OTP (${forgotOtpCooldownRemaining}s)`;
+        }, 1000);
       }
 
       function formatRemaining(ms) {
@@ -242,6 +437,8 @@
         licenseSection.classList.add('hidden');
         adminSection.classList.add('hidden');
         loginSection.classList.add('hidden');
+        forgotSection.classList.add('hidden');
+        forgotOtpSection.classList.add('hidden');
 
         if (!context) {
           stateBadge.textContent = 'Error';
@@ -267,6 +464,78 @@
         setMessage(loginMessage, '', '');
         renderRemaining(context.license?.expiresAt || context.expiresAt || null);
         loginSection.classList.remove('hidden');
+        loadMobilePairingQr();
+      }
+
+      async function loadMobilePairingQr() {
+        if (!window.electronAPI?.mobilePairingInfo) {
+          setMessage(mobileQrMessage, 'Mobile pairing is not available.', 'error');
+          return;
+        }
+
+        mobileQrRefreshBtn.disabled = true;
+        mobileQrCopyBtn.disabled = true;
+        mobileQrImage.classList.add('hidden');
+        mobileQrPlaceholder.classList.remove('hidden');
+        mobileQrPlaceholder.textContent = 'Loading QR...';
+        setMessage(mobileQrMessage, '', '');
+
+        try {
+          const result = await window.electronAPI.mobilePairingInfo();
+          if (!result || !result.ok) {
+            mobilePairingText = '';
+            mobileQrProductCode.textContent = '--';
+            mobileQrStatusPath.textContent = '--';
+            mobileQrPlaceholder.textContent = 'QR unavailable';
+            setMessage(mobileQrMessage, result?.message || 'Failed to create QR.', 'error');
+            return;
+          }
+
+          mobilePairingText = result.qrText || '';
+          mobileQrProductCode.textContent = result.productCode || '--';
+          mobileQrStatusPath.textContent = result.statusPath || '--';
+          mobileQrImage.src = result.qrDataUrl;
+          mobileQrImage.classList.remove('hidden');
+          mobileQrPlaceholder.classList.add('hidden');
+          mobileQrCopyBtn.disabled = !mobilePairingText;
+        } catch (error) {
+          mobilePairingText = '';
+          mobileQrProductCode.textContent = '--';
+          mobileQrStatusPath.textContent = '--';
+          mobileQrPlaceholder.textContent = 'QR unavailable';
+          setMessage(mobileQrMessage, 'Failed to create QR.', 'error');
+        } finally {
+          mobileQrRefreshBtn.disabled = false;
+        }
+      }
+
+      function showForgotSearch() {
+        clearRemainingTimer();
+        clearForgotOtpCooldown();
+        licenseSection.classList.add('hidden');
+        adminSection.classList.add('hidden');
+        loginSection.classList.add('hidden');
+        forgotOtpSection.classList.add('hidden');
+        forgotSection.classList.remove('hidden');
+        stateBadge.textContent = 'Forgot Password';
+        forgotAccount = null;
+        setMessage(forgotMessage, '', '');
+      }
+
+      function showForgotOtp(user) {
+        clearRemainingTimer();
+        licenseSection.classList.add('hidden');
+        adminSection.classList.add('hidden');
+        loginSection.classList.add('hidden');
+        forgotSection.classList.add('hidden');
+        forgotOtpSection.classList.remove('hidden');
+        stateBadge.textContent = 'Password Reset';
+        forgotAccount = user || null;
+        forgotOtpEmail.textContent = user?.email || '--';
+        forgotOtpCode.value = '';
+        forgotNewPassword.value = '';
+        forgotConfirmPassword.value = '';
+        setMessage(forgotOtpMessage, '', '');
       }
 
       async function refreshContext() {
@@ -364,6 +633,131 @@
           setMessage(loginMessage, 'Login failed.', 'error');
         } finally {
           submitBtn.disabled = false;
+        }
+      });
+
+      forgotPasswordBtn.addEventListener('click', () => {
+        forgotEmailInput.value = document.getElementById('email').value.trim();
+        showForgotSearch();
+        forgotEmailInput.focus();
+      });
+
+      forgotBackBtn.addEventListener('click', () => {
+        refreshContext();
+      });
+
+      forgotOtpBackBtn.addEventListener('click', () => {
+        showForgotSearch();
+      });
+
+      forgotSearchBtn.addEventListener('click', async () => {
+        const email = forgotEmailInput.value.trim();
+        if (!email) {
+          setMessage(forgotMessage, 'Email is required.', 'error');
+          return;
+        }
+
+        forgotSearchBtn.disabled = true;
+        setMessage(forgotMessage, '', '');
+        try {
+          const result = await window.electronAPI.forgotPasswordFindUser(email);
+          if (!result || !result.ok) {
+            setMessage(forgotMessage, result?.message || 'Account not found.', 'error');
+            return;
+          }
+          showForgotOtp(result.user);
+        } catch (error) {
+          setMessage(forgotMessage, 'Failed to search account.', 'error');
+        } finally {
+          forgotSearchBtn.disabled = false;
+        }
+      });
+
+      forgotSendOtpBtn.addEventListener('click', async () => {
+        if (!forgotAccount?.email) {
+          setMessage(forgotOtpMessage, 'Search account first.', 'error');
+          return;
+        }
+
+        forgotSendOtpBtn.disabled = true;
+        setMessage(forgotOtpMessage, '', '');
+        try {
+          const result = await window.electronAPI.forgotPasswordSendOtp(forgotAccount.email);
+          if (!result || !result.ok) {
+            setMessage(forgotOtpMessage, result?.message || 'Failed to send OTP.', 'error');
+            return;
+          }
+          setMessage(forgotOtpMessage, result.message || 'OTP sent successfully.', 'ok');
+          startForgotOtpCooldown(45);
+          forgotOtpCode.focus();
+        } catch (error) {
+          setMessage(forgotOtpMessage, 'Failed to send OTP.', 'error');
+        } finally {
+          if (!forgotOtpCooldownInterval) {
+            forgotSendOtpBtn.disabled = false;
+          }
+        }
+      });
+
+      forgotResetBtn.addEventListener('click', async () => {
+        if (!forgotAccount?.email) {
+          setMessage(forgotOtpMessage, 'Search account first.', 'error');
+          return;
+        }
+
+        const otp = forgotOtpCode.value.trim();
+        const password = forgotNewPassword.value;
+        const confirmPassword = forgotConfirmPassword.value;
+
+        if (!otp || !password || !confirmPassword) {
+          setMessage(forgotOtpMessage, 'OTP, new password and confirm password are required.', 'error');
+          return;
+        }
+        if (password !== confirmPassword) {
+          setMessage(forgotOtpMessage, 'Passwords do not match.', 'error');
+          return;
+        }
+
+        forgotResetBtn.disabled = true;
+        setMessage(forgotOtpMessage, '', '');
+        try {
+          const result = await window.electronAPI.forgotPasswordReset({
+            email: forgotAccount.email,
+            otp,
+            password
+          });
+          if (!result || !result.ok) {
+            setMessage(forgotOtpMessage, result?.message || 'Password reset failed.', 'error');
+            return;
+          }
+          const resetEmail = forgotAccount.email;
+          forgotAccount = null;
+          clearForgotOtpCooldown();
+          await refreshContext();
+          document.getElementById('email').value = resetEmail;
+          setMessage(loginMessage, 'Password reset successfully. Please sign in.', 'ok');
+        } catch (error) {
+          setMessage(forgotOtpMessage, 'Password reset failed.', 'error');
+        } finally {
+          forgotResetBtn.disabled = false;
+        }
+      });
+
+      mobileQrRefreshBtn.addEventListener('click', () => {
+        loadMobilePairingQr();
+      });
+
+      mobileQrCopyBtn.addEventListener('click', async () => {
+        if (!mobilePairingText) {
+          setMessage(mobileQrMessage, 'Pairing data is not ready.', 'error');
+          return;
+        }
+
+        try {
+          await navigator.clipboard.writeText(mobilePairingText);
+          setMessage(mobileQrMessage, 'Pairing data copied.', 'ok');
+        } catch (error) {
+          setMessage(mobileQrMessage, 'Copy failed.', 'error');
         }
       });
 

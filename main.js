@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, nativeImage } = require('electron')
+const { app, BrowserWindow, ipcMain, nativeImage, net } = require('electron')
 const { autoUpdater } = require('electron-updater')
 const fs = require('fs')
 const path = require('path')
@@ -7,11 +7,13 @@ const crypto = require('crypto')
 const { SerialPort } = require('serialport')
 const Database = require('better-sqlite3')
 const bcrypt = require('bcrypt')
+const QRCode = require('qrcode')
 
 let mainWindow
 let loginWindow
 let port = null
 let pollInterval = null
+let simulatedScaleInterval = null
 let lastWeight = 0
 let db = null
 let dbFilePath = ''
@@ -24,6 +26,20 @@ const iconPath = path.join(__dirname, 'app.png')
 const appIcon = nativeImage.createFromPath(iconPath)
 const SCALE_PORT = process.platform === 'win32' ? 'COM3 , COM4, COM2, COM1'  : '/dev/ttyUSB0'
 const SCALE_DECIMAL_POS = 2
+const SIMULATE_SCALE = /^(1|true|yes)$/i.test(String(process.env.SIMULATE_SCALE || ''))
+const SIMULATED_SCALE_INTERVAL_MS = 1000
+const FIREBASE_DATABASE_URL = 'https://the-terminal-31cd6-default-rtdb.asia-southeast1.firebasedatabase.app'
+const FIREBASE_WEIGHT_UPLOAD_INTERVAL_MS = 1000
+const FIREBASE_WEIGHT_REQUEST_TIMEOUT_MS = 5000
+const FIREBASE_TERMINAL_STATUS_INTERVAL_MS = 15000
+const FIREBASE_TERMINAL_STATUS_STALE_AFTER_MS = 45000
+const EMAILJS_API_URL = 'https://api.emailjs.com/api/v1.0/email/send'
+const EMAILJS_SERVICE_ID = process.env.EMAILJS_SERVICE_ID || 'service_1o04c4r'
+const EMAILJS_TEMPLATE_ID = process.env.EMAILJS_TEMPLATE_ID || 'template_4m2g9we'
+const EMAILJS_PUBLIC_KEY = process.env.EMAILJS_PUBLIC_KEY || 'TIEj_SsKtmJqJSPH1'
+const EMAILJS_PRIVATE_KEY = process.env.EMAILJS_PRIVATE_KEY || '3bByY02-4SQAzedGzrDwA'
+const PASSWORD_RESET_OTP_EXPIRY_MS = 5 * 60 * 1000
+const PASSWORD_RESET_OTP_REQUEST_TIMEOUT_MS = 10000
 const LICENSE_PUBLIC_KEY_PEM = (() => {
   const envKey = process.env.LICENSE_PUBLIC_KEY_PEM
   if (envKey && envKey.trim()) return envKey
@@ -65,6 +81,433 @@ function getProductCode() {
     .digest('hex')
     .toUpperCase()
   return [raw.slice(0, 6), raw.slice(6, 12), raw.slice(12, 18), raw.slice(18, 24)].join('-')
+}
+
+let firebasePendingWeight = null
+let firebaseUploadTimer = null
+let firebaseUploadInFlight = false
+let firebaseLastUploadAt = 0
+let firebaseStatusInterval = null
+let firebaseStatusInFlight = false
+let isQuittingAfterFirebaseOffline = false
+const passwordResetOtps = new Map()
+
+function isOnlineForFirebase() {
+  try {
+    return net.isOnline()
+  } catch (error) {
+    console.error('Failed to check online status:', error)
+    return false
+  }
+}
+
+function getFirebaseJsonUrl(firebasePath) {
+  const encodedPath = String(firebasePath || '')
+    .split('/')
+    .filter(Boolean)
+    .map((part) => encodeURIComponent(part))
+    .join('/')
+  return `${FIREBASE_DATABASE_URL}/${encodedPath}.json`
+}
+
+function getLiveWeightPath() {
+  return `scales/${getProductCode()}/latest`
+}
+
+function getTerminalStatusPath() {
+  return `scales/${getProductCode()}/status`
+}
+
+function getFirebaseWeightUrl() {
+  return getFirebaseJsonUrl(getLiveWeightPath())
+}
+
+function getFirebaseTerminalStatusUrl() {
+  return getFirebaseJsonUrl(getTerminalStatusPath())
+}
+
+function getMobilePairingText() {
+  const productCode = getProductCode()
+  const liveWeightPath = getLiveWeightPath()
+  const terminalStatusPath = getTerminalStatusPath()
+  const params = new URLSearchParams({
+    productCode,
+    databaseURL: FIREBASE_DATABASE_URL,
+    path: liveWeightPath,
+    statusPath: terminalStatusPath,
+    terminalStaleAfterMs: String(FIREBASE_TERMINAL_STATUS_STALE_AFTER_MS)
+  })
+  return `the-terminal://live-weight?${params.toString()}`
+}
+
+async function getMobilePairingInfo() {
+  const productCode = getProductCode()
+  const liveWeightPath = getLiveWeightPath()
+  const terminalStatusPath = getTerminalStatusPath()
+  const qrText = getMobilePairingText()
+  const qrDataUrl = await QRCode.toDataURL(qrText, {
+    errorCorrectionLevel: 'M',
+    margin: 2,
+    width: 220,
+    color: {
+      dark: '#0f172a',
+      light: '#ffffff'
+    }
+  })
+
+  return {
+    productCode,
+    databaseURL: FIREBASE_DATABASE_URL,
+    path: liveWeightPath,
+    statusPath: terminalStatusPath,
+    readUrl: `${FIREBASE_DATABASE_URL}/${liveWeightPath}.json`,
+    statusReadUrl: `${FIREBASE_DATABASE_URL}/${terminalStatusPath}.json`,
+    terminalStaleAfterMs: FIREBASE_TERMINAL_STATUS_STALE_AFTER_MS,
+    qrText,
+    qrDataUrl
+  }
+}
+
+function buildFirebaseTerminalStatusPayload(state = 'online') {
+  const now = new Date()
+  const isOnline = state === 'online'
+  return {
+    productCode: getProductCode(),
+    state,
+    online: isOnline,
+    updatedAt: now.toISOString(),
+    updatedAtMs: now.getTime(),
+    heartbeatIntervalMs: FIREBASE_TERMINAL_STATUS_INTERVAL_MS,
+    staleAfterMs: FIREBASE_TERMINAL_STATUS_STALE_AFTER_MS,
+    appName: 'The Terminal',
+    appVersion: app.getVersion(),
+    platform: process.platform,
+    hostname: os.hostname(),
+    user: currentUser
+      ? {
+          id: currentUser.id,
+          username: currentUser.username,
+          role: currentUser.role
+        }
+      : null
+  }
+}
+
+async function publishFirebaseTerminalStatus(state = 'online') {
+  if (!isOnlineForFirebase()) {
+    return false
+  }
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), FIREBASE_WEIGHT_REQUEST_TIMEOUT_MS)
+  try {
+    const response = await net.fetch(getFirebaseTerminalStatusUrl(), {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(buildFirebaseTerminalStatusPayload(state)),
+      signal: controller.signal
+    })
+
+    if (!response.ok) {
+      const responseText = await response.text().catch(() => '')
+      throw new Error(`Firebase terminal status write failed (${response.status}): ${responseText}`)
+    }
+    return true
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function publishFirebaseTerminalHeartbeat() {
+  if (isQuittingAfterFirebaseOffline) {
+    return
+  }
+  if (firebaseStatusInFlight) {
+    return
+  }
+
+  firebaseStatusInFlight = true
+  try {
+    await publishFirebaseTerminalStatus('online')
+  } catch (error) {
+    console.error('Failed to publish terminal status to Firebase:', error?.message || error)
+  } finally {
+    firebaseStatusInFlight = false
+  }
+}
+
+function startFirebaseTerminalStatusHeartbeat() {
+  if (firebaseStatusInterval) {
+    return
+  }
+
+  publishFirebaseTerminalHeartbeat()
+  firebaseStatusInterval = setInterval(
+    publishFirebaseTerminalHeartbeat,
+    FIREBASE_TERMINAL_STATUS_INTERVAL_MS
+  )
+}
+
+function stopFirebaseTerminalStatusHeartbeat() {
+  if (firebaseStatusInterval) {
+    clearInterval(firebaseStatusInterval)
+    firebaseStatusInterval = null
+  }
+}
+
+function waitForFirebaseTerminalStatusIdle(maxWaitMs = 2000) {
+  const startedAt = Date.now()
+  return new Promise((resolve) => {
+    const check = () => {
+      if (!firebaseStatusInFlight || Date.now() - startedAt >= maxWaitMs) {
+        resolve()
+        return
+      }
+      setTimeout(check, 50)
+    }
+    check()
+  })
+}
+
+function buildFirebaseWeightPayload(weight, decimalPlaces) {
+  const numericWeight = Number(weight)
+  const normalizedDecimalPlaces = Number(decimalPlaces)
+  const now = new Date()
+  return {
+    productCode: getProductCode(),
+    weight: numericWeight,
+    unit: 'kg',
+    decimalPlaces: Number.isFinite(normalizedDecimalPlaces) ? normalizedDecimalPlaces : null,
+    updatedAt: now.toISOString(),
+    updatedAtMs: now.getTime(),
+    online: true,
+    user: currentUser
+      ? {
+          id: currentUser.id,
+          username: currentUser.username,
+          role: currentUser.role
+        }
+      : null
+  }
+}
+
+async function publishFirebaseWeight(payload) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), FIREBASE_WEIGHT_REQUEST_TIMEOUT_MS)
+  try {
+    const response = await net.fetch(getFirebaseWeightUrl(), {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    })
+
+    if (!response.ok) {
+      const responseText = await response.text().catch(() => '')
+      throw new Error(`Firebase latest write failed (${response.status}): ${responseText}`)
+    }
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+function scheduleFirebaseWeightFlush() {
+  if (firebaseUploadTimer || firebaseUploadInFlight) {
+    return
+  }
+
+  const waitMs = Math.max(
+    0,
+    FIREBASE_WEIGHT_UPLOAD_INTERVAL_MS - (Date.now() - firebaseLastUploadAt)
+  )
+
+  firebaseUploadTimer = setTimeout(() => {
+    firebaseUploadTimer = null
+    flushFirebaseWeight().catch((error) => {
+      console.error('Failed to publish weight to Firebase:', error?.message || error)
+    })
+  }, waitMs)
+}
+
+async function flushFirebaseWeight() {
+  if (firebaseUploadInFlight || !firebasePendingWeight) {
+    return
+  }
+
+  if (!isOnlineForFirebase()) {
+    firebasePendingWeight = null
+    return
+  }
+
+  const pending = firebasePendingWeight
+  firebasePendingWeight = null
+  firebaseUploadInFlight = true
+
+  try {
+    await publishFirebaseWeight(buildFirebaseWeightPayload(pending.weight, pending.decimalPlaces))
+    firebaseLastUploadAt = Date.now()
+  } catch (error) {
+    console.error('Failed to publish weight to Firebase:', error?.message || error)
+  } finally {
+    firebaseUploadInFlight = false
+    if (firebasePendingWeight) {
+      scheduleFirebaseWeightFlush()
+    }
+  }
+}
+
+function queueFirebaseWeight(weight, decimalPlaces) {
+  const numericWeight = Number(weight)
+  if (!Number.isFinite(numericWeight)) {
+    return
+  }
+
+  if (!isOnlineForFirebase()) {
+    firebasePendingWeight = null
+    return
+  }
+
+  firebasePendingWeight = {
+    weight: numericWeight,
+    decimalPlaces
+  }
+  scheduleFirebaseWeightFlush()
+}
+
+function sendScaleData(weight, decimalPlaces = SCALE_DECIMAL_POS) {
+  if (mainWindow) {
+    mainWindow.webContents.send('scale-data', weight)
+  }
+  queueFirebaseWeight(weight, decimalPlaces)
+}
+
+function stopSimulatedScale() {
+  if (simulatedScaleInterval) {
+    clearInterval(simulatedScaleInterval)
+    simulatedScaleInterval = null
+  }
+}
+
+function stopSerialScaleConnection() {
+  if (pollInterval) {
+    clearInterval(pollInterval)
+    pollInterval = null
+  }
+
+  if (port && port.isOpen) {
+    port.close()
+  }
+  port = null
+}
+
+function startSimulatedScale(decimalPlaces = SCALE_DECIMAL_POS) {
+  stopSerialScaleConnection()
+  stopSimulatedScale()
+
+  let simulatedWeight = 25
+  const step = () => {
+    const movement = (Math.random() * 4) - 2
+    simulatedWeight = Math.max(0, Math.min(100, simulatedWeight + movement))
+    const finalWeight = Number(simulatedWeight.toFixed(decimalPlaces))
+
+    if (Math.abs(finalWeight - lastWeight) > 0.001) {
+      lastWeight = finalWeight
+      console.log(`Simulated scale weight: ${finalWeight.toFixed(decimalPlaces)} kg`)
+      sendScaleData(finalWeight, decimalPlaces)
+    }
+  }
+
+  step()
+  simulatedScaleInterval = setInterval(step, SIMULATED_SCALE_INTERVAL_MS)
+  return `Simulated scale started (${decimalPlaces} decimals)`
+}
+
+function isEmailJsConfigured() {
+  return Boolean(
+    EMAILJS_SERVICE_ID &&
+    EMAILJS_TEMPLATE_ID &&
+    EMAILJS_PUBLIC_KEY &&
+    !EMAILJS_SERVICE_ID.startsWith('YOUR_') &&
+    !EMAILJS_TEMPLATE_ID.startsWith('YOUR_') &&
+    !EMAILJS_PUBLIC_KEY.startsWith('YOUR_')
+  )
+}
+
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function generateOtpCode() {
+  return String(crypto.randomInt(100000, 1000000))
+}
+
+function hashOtp(email, otp) {
+  return crypto
+    .createHash('sha256')
+    .update(`${normalizeEmail(email)}|${otp}|THE-TERMINAL-PASSWORD-RESET`)
+    .digest('hex')
+}
+
+function getUserByEmail(email) {
+  if (!db) return null
+  return db.prepare(
+    'SELECT id, username, email FROM user_details WHERE lower(email) = ? LIMIT 1'
+  ).get(normalizeEmail(email)) || null
+}
+
+async function sendPasswordResetOtpEmail(user, otp) {
+  if (!isEmailJsConfigured()) {
+    return { ok: false, message: 'EmailJS is not configured.' }
+  }
+  if (!isOnlineForFirebase()) {
+    return { ok: false, message: 'Internet connection is required to send OTP.' }
+  }
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), PASSWORD_RESET_OTP_REQUEST_TIMEOUT_MS)
+  const payload = {
+    service_id: EMAILJS_SERVICE_ID,
+    template_id: EMAILJS_TEMPLATE_ID,
+    user_id: EMAILJS_PUBLIC_KEY,
+    template_params: {
+      to_email: user.email,
+      to_name: user.username || 'User',
+      otp_code: otp,
+      app_name: 'The Terminal',
+      expiry_minutes: String(Math.floor(PASSWORD_RESET_OTP_EXPIRY_MS / 60000)),
+      support_email: 'contact@appdevloper.com'
+    }
+  }
+
+  if (EMAILJS_PRIVATE_KEY) {
+    payload.accessToken = EMAILJS_PRIVATE_KEY
+  }
+
+  try {
+    const response = await net.fetch(EMAILJS_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    })
+
+    if (!response.ok) {
+      const responseText = await response.text().catch(() => '')
+      throw new Error(`EmailJS send failed (${response.status}): ${responseText}`)
+    }
+
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, message: error?.message || 'Failed to send OTP.' }
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 function verifyLicenseCode(licenseCode) {
@@ -244,10 +687,8 @@ function createWindow() {
   if (!appIcon.isEmpty()) {
     mainWindow.setIcon(appIcon)
   }
-  const indexPath = path.join(__dirname, "renderer", "build", "index.html");
+  const indexPath = path.join(__dirname, 'renderer', 'build', 'index.html')
   mainWindow.loadFile(indexPath)
-  
-  // mainWindow.loadURL('http://localhost:3000/')
   
 }
 
@@ -521,6 +962,7 @@ function initDb() {
 app.whenReady().then(() => {
   initDb()
   createLoginWindow()
+  startFirebaseTerminalStatusHeartbeat()
   initAutoUpdater()
 })
 
@@ -528,6 +970,10 @@ app.whenReady().then(() => {
 
 // Main scale function with robust parsing
 ipcMain.handle('start-scale', async () => {
+  if (SIMULATE_SCALE) {
+    return startSimulatedScale(SCALE_DECIMAL_POS)
+  }
+
   // Clean up any existing connection
   if (port && port.isOpen) {
     port.close()
@@ -670,10 +1116,7 @@ ipcMain.handle('start-scale', async () => {
             
             // console.log(`⚖️ Weight: ${finalWeight.toFixed(decimalMode)} kg (${decimalMode} decimals)`)
             
-            // Send to React
-            if (mainWindow) {
-              mainWindow.webContents.send('scale-data', finalWeight)
-            }
+            sendScaleData(finalWeight, decimalMode)
           }
         } else {
           // console.log('⚠️ Frame too short:', frame)
@@ -1240,7 +1683,130 @@ ipcMain.handle('auth:login', (_event, payload) => {
   if (!mainWindow) {
     createWindow()
   }
+  publishFirebaseTerminalHeartbeat()
   return { ok: true }
+})
+
+ipcMain.handle('auth:forgot-password:find-user', (_event, payload) => {
+  if (!db) {
+    throw new Error('Database not initialized')
+  }
+  const licenseStatus = getLicenseStatus()
+  if (!licenseStatus.active) {
+    return { ok: false, message: licenseStatus.message || 'License is not active.' }
+  }
+
+  const email = normalizeEmail(payload?.email)
+  if (!email) {
+    return { ok: false, message: 'Email is required.' }
+  }
+
+  const row = getUserByEmail(email)
+  if (!row) {
+    return { ok: false, message: 'No account found for this email.' }
+  }
+
+  return {
+    ok: true,
+    user: {
+      id: row.id,
+      username: row.username,
+      email: row.email
+    }
+  }
+})
+
+ipcMain.handle('auth:forgot-password:send-otp', async (_event, payload) => {
+  if (!db) {
+    throw new Error('Database not initialized')
+  }
+  const licenseStatus = getLicenseStatus()
+  if (!licenseStatus.active) {
+    return { ok: false, message: licenseStatus.message || 'License is not active.' }
+  }
+
+  const email = normalizeEmail(payload?.email)
+  if (!email) {
+    return { ok: false, message: 'Email is required.' }
+  }
+
+  const row = getUserByEmail(email)
+  if (!row) {
+    return { ok: false, message: 'No account found for this email.' }
+  }
+
+  const otp = generateOtpCode()
+  const emailResult = await sendPasswordResetOtpEmail(row, otp)
+  if (!emailResult.ok) {
+    return emailResult
+  }
+
+  passwordResetOtps.set(email, {
+    userId: row.id,
+    otpHash: hashOtp(email, otp),
+    expiresAt: Date.now() + PASSWORD_RESET_OTP_EXPIRY_MS,
+    attempts: 0
+  })
+
+  return {
+    ok: true,
+    message: 'OTP sent successfully.'
+  }
+})
+
+ipcMain.handle('auth:forgot-password:reset', (_event, payload) => {
+  if (!db) {
+    throw new Error('Database not initialized')
+  }
+  const licenseStatus = getLicenseStatus()
+  if (!licenseStatus.active) {
+    return { ok: false, message: licenseStatus.message || 'License is not active.' }
+  }
+
+  const email = normalizeEmail(payload?.email)
+  const otp = String(payload?.otp || '').trim()
+  const password = String(payload?.password || '')
+
+  if (!email || !otp || !password) {
+    return { ok: false, message: 'Email, OTP and new password are required.' }
+  }
+  if (password.length < 6) {
+    return { ok: false, message: 'Password must be at least 6 characters.' }
+  }
+
+  const otpState = passwordResetOtps.get(email)
+  if (!otpState) {
+    return { ok: false, message: 'Send OTP first.' }
+  }
+  if (otpState.expiresAt < Date.now()) {
+    passwordResetOtps.delete(email)
+    return { ok: false, message: 'OTP expired. Send a new OTP.' }
+  }
+  if (otpState.attempts >= 5) {
+    passwordResetOtps.delete(email)
+    return { ok: false, message: 'Too many invalid OTP attempts. Send a new OTP.' }
+  }
+
+  const expectedHash = otpState.otpHash
+  const receivedHash = hashOtp(email, otp)
+  if (receivedHash !== expectedHash) {
+    otpState.attempts += 1
+    passwordResetOtps.set(email, otpState)
+    return { ok: false, message: 'Invalid OTP.' }
+  }
+
+  const passwordHash = bcrypt.hashSync(password, 10)
+  const info = db.prepare('UPDATE user_details SET password_hash = ? WHERE id = ?').run(
+    passwordHash,
+    otpState.userId
+  )
+  passwordResetOtps.delete(email)
+
+  if (!info.changes) {
+    return { ok: false, message: 'Password reset failed.' }
+  }
+
+  return { ok: true, message: 'Password reset successfully.' }
 })
 
 ipcMain.handle('auth:current', () => {
@@ -1249,6 +1815,15 @@ ipcMain.handle('auth:current', () => {
 
 ipcMain.handle('auth:bootstrap', () => {
   return getBootstrapContext()
+})
+
+ipcMain.handle('mobile:pairing-info', async () => {
+  try {
+    const pairingInfo = await getMobilePairingInfo()
+    return { ok: true, ...pairingInfo }
+  } catch (error) {
+    return { ok: false, message: error?.message || 'Failed to create mobile pairing QR.' }
+  }
 })
 
 ipcMain.handle('license:activate', (_event, payload) => {
@@ -1349,6 +1924,10 @@ ipcMain.handle('updates:quitAndInstall', () => {
 
 // Force 2 decimal mode
 ipcMain.handle('start-scale-2dec', async () => {
+  if (SIMULATE_SCALE) {
+    return startSimulatedScale(2)
+  }
+
   if (port && port.isOpen) {
     port.close()
   }
@@ -1403,9 +1982,7 @@ ipcMain.handle('start-scale-2dec', async () => {
           if (Math.abs(finalWeight - lastWeight) >= epsilon) {
             lastWeight = finalWeight
             // console.log(`⚖️ ${finalWeight.toFixed(SCALE_DECIMAL_POS)} kg`)
-            if (mainWindow) {
-              mainWindow.webContents.send('scale-data', finalWeight)
-            }
+            sendScaleData(finalWeight, SCALE_DECIMAL_POS)
           }
         }
 
@@ -1459,9 +2036,7 @@ ipcMain.handle('start-scale-2dec', async () => {
         if (Math.abs(finalWeight - lastWeight) >= epsilon) {
           lastWeight = finalWeight
           // console.log(`⚖️ ${finalWeight.toFixed(decimalPos)} kg`)
-          if (mainWindow) {
-            mainWindow.webContents.send('scale-data', finalWeight)
-          }
+          sendScaleData(finalWeight, decimalPos)
         }
       }
     })
@@ -1475,6 +2050,10 @@ ipcMain.handle('start-scale-2dec', async () => {
 
 // Force 3 decimal mode
 ipcMain.handle('start-scale-3dec', async () => {
+  if (SIMULATE_SCALE) {
+    return startSimulatedScale(3)
+  }
+
   if (port && port.isOpen) {
     port.close()
   }
@@ -1529,9 +2108,7 @@ ipcMain.handle('start-scale-3dec', async () => {
             lastWeight = finalWeight
             // console.log(`⚖️ ${finalWeight.toFixed(3)} kg`)
             
-            if (mainWindow) {
-              mainWindow.webContents.send('scale-data', finalWeight)
-            }
+            sendScaleData(finalWeight, 3)
           }
         }
         
@@ -1552,6 +2129,8 @@ ipcMain.handle('start-scale-3dec', async () => {
 })
 
 ipcMain.handle('stop-scale', () => {
+  stopSimulatedScale()
+
   if (pollInterval) {
     clearInterval(pollInterval)
     pollInterval = null
@@ -1593,7 +2172,9 @@ ipcMain.handle('test-scale', async () => {
   return 'Testing scale commands...'
 })
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
+  stopSimulatedScale()
+  stopFirebaseTerminalStatusHeartbeat()
   if (pollInterval) clearInterval(pollInterval)
   if (port && port.isOpen) port.close()
   if (dbBackupWatcher) {
@@ -1605,4 +2186,17 @@ app.on('before-quit', () => {
     dbBackupTimer = null
   }
   createDbBackup('before-quit')
+
+  if (!isQuittingAfterFirebaseOffline && isOnlineForFirebase()) {
+    event.preventDefault()
+    isQuittingAfterFirebaseOffline = true
+    waitForFirebaseTerminalStatusIdle()
+      .then(() => publishFirebaseTerminalStatus('offline'))
+      .catch((error) => {
+        console.error('Failed to publish terminal offline status:', error?.message || error)
+      })
+      .finally(() => {
+        app.quit()
+      })
+  }
 })

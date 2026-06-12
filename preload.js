@@ -48,7 +48,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   activateLicense: (licenseCode) => ipcRenderer.invoke('license:activate', { licenseCode }),
   createInitialAdmin: (data) => ipcRenderer.invoke('auth:create-initial-admin', data),
   login: (email, password) => ipcRenderer.invoke('auth:login', { email, password }),
+  forgotPasswordFindUser: (email) => ipcRenderer.invoke('auth:forgot-password:find-user', { email }),
+  forgotPasswordSendOtp: (email) => ipcRenderer.invoke('auth:forgot-password:send-otp', { email }),
+  forgotPasswordReset: (data) => ipcRenderer.invoke('auth:forgot-password:reset', data),
   currentUser: () => ipcRenderer.invoke('auth:current'),
+  mobilePairingInfo: () => ipcRenderer.invoke('mobile:pairing-info'),
 
   checkForUpdates: () => ipcRenderer.invoke('updates:check'),
   downloadUpdate: () => ipcRenderer.invoke('updates:download'),
