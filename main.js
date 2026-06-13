@@ -20,7 +20,7 @@ let dbFilePath = ''
 let currentUser = null
 let dbBackupWatcher = null
 let dbBackupTimer = null
-let dbBackupInProgress = false
+let dbBackupInProgress = false;
 let dbBackupQueued = false
 const iconPath = path.join(__dirname, 'app.png')
 const appIcon = nativeImage.createFromPath(iconPath)
@@ -457,6 +457,11 @@ function getUserByEmail(email) {
   return db.prepare(
     'SELECT id, username, email FROM user_details WHERE lower(email) = ? LIMIT 1'
   ).get(normalizeEmail(email)) || null
+}
+
+function isAdminRole(role) {
+  const normalizedRole = String(role || '').trim().toLowerCase()
+  return normalizedRole === 'admin' || normalizedRole === 'super admin'
 }
 
 async function sendPasswordResetOtpEmail(user, otp) {
@@ -1685,6 +1690,50 @@ ipcMain.handle('auth:login', (_event, payload) => {
   }
   publishFirebaseTerminalHeartbeat()
   return { ok: true }
+})
+
+ipcMain.handle('auth:mobile-pairing-login', (_event, payload) => {
+  if (!db) {
+    throw new Error('Database not initialized')
+  }
+  const licenseStatus = getLicenseStatus()
+  if (!licenseStatus.active) {
+    return { ok: false, message: licenseStatus.message || 'License is not active.' }
+  }
+  if (!hasAdminUser()) {
+    return { ok: false, message: 'Create super admin user first.' }
+  }
+
+  const { email, password } = payload || {}
+  if (!email || !password) {
+    return { ok: false, message: 'Email and password are required.' }
+  }
+
+  const row = db.prepare(
+    'SELECT id, username, email, contact, role, photo, password_hash FROM user_details WHERE lower(email) = ?'
+  ).get(normalizeEmail(email))
+  if (!row || !row.password_hash) {
+    return { ok: false, message: 'Invalid email or password.' }
+  }
+
+  const isValid = bcrypt.compareSync(String(password), row.password_hash)
+  if (!isValid) {
+    return { ok: false, message: 'Invalid email or password.' }
+  }
+
+  if (!isAdminRole(row.role)) {
+    return { ok: false, message: 'Only admin or super admin can connect mobile app.' }
+  }
+
+  return {
+    ok: true,
+    user: {
+      id: row.id,
+      username: row.username,
+      email: row.email,
+      role: row.role
+    }
+  }
 })
 
 ipcMain.handle('auth:forgot-password:find-user', (_event, payload) => {

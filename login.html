@@ -175,7 +175,7 @@
       }
       .qr-actions {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: repeat(3, 1fr);
         gap: 8px;
       }
       .hidden { display: none; }
@@ -254,10 +254,26 @@
           <label for="password">Password</label>
           <input id="password" type="password" autocomplete="current-password" required />
           <button class="btn" type="submit" id="submit-btn">Login</button>
+          <button class="btn secondary" id="mobile-connect-btn" type="button">Mobile Connect</button>
           <button class="text-btn" id="forgot-password-btn" type="button">Forgot password?</button>
           <div class="message" id="login-message"></div>
         </form>
-        <div class="qr-panel">
+      </section>
+
+      <section id="mobile-section" class="hidden">
+        <h1>Mobile Connect</h1>
+        <p>Admin access is required before pairing a mobile app.</p>
+        <form id="mobile-portal-form">
+          <label for="mobile-portal-email">Admin Email</label>
+          <input id="mobile-portal-email" type="email" autocomplete="username" />
+          <label for="mobile-portal-password">Admin Password</label>
+          <input id="mobile-portal-password" type="password" autocomplete="current-password" />
+          <button class="btn" id="mobile-portal-submit-btn" type="submit">Open QR Portal</button>
+          <button class="btn secondary" id="mobile-back-btn" type="button">Back to Login</button>
+          <div class="message" id="mobile-portal-message"></div>
+        </form>
+
+        <div class="qr-panel hidden" id="mobile-qr-panel">
           <div class="qr-header">
             <div>
               <div class="qr-title">Mobile Live Weight</div>
@@ -279,6 +295,7 @@
           <div class="qr-actions">
             <button class="btn secondary" id="mobile-qr-refresh-btn" type="button">Refresh QR</button>
             <button class="btn secondary" id="mobile-qr-copy-btn" type="button">Copy Data</button>
+            <button class="btn secondary" id="mobile-qr-back-btn" type="button">Back</button>
           </div>
           <div class="message" id="mobile-qr-message"></div>
         </div>
@@ -325,6 +342,7 @@
       const licenseSection = document.getElementById('license-section');
       const adminSection = document.getElementById('admin-section');
       const loginSection = document.getElementById('login-section');
+      const mobileSection = document.getElementById('mobile-section');
       const forgotSection = document.getElementById('forgot-section');
       const forgotOtpSection = document.getElementById('forgot-otp-section');
 
@@ -342,6 +360,13 @@
       const submitBtn = document.getElementById('submit-btn');
       const remainingWrap = document.getElementById('remaining-wrap');
       const remainingTime = document.getElementById('remaining-time');
+      const mobileConnectBtn = document.getElementById('mobile-connect-btn');
+      const mobilePortalForm = document.getElementById('mobile-portal-form');
+      const mobilePortalEmail = document.getElementById('mobile-portal-email');
+      const mobilePortalPassword = document.getElementById('mobile-portal-password');
+      const mobilePortalSubmitBtn = document.getElementById('mobile-portal-submit-btn');
+      const mobileBackBtn = document.getElementById('mobile-back-btn');
+      const mobilePortalMessage = document.getElementById('mobile-portal-message');
       const forgotPasswordBtn = document.getElementById('forgot-password-btn');
       const forgotEmailInput = document.getElementById('forgot-email');
       const forgotSearchBtn = document.getElementById('forgot-search-btn');
@@ -355,12 +380,14 @@
       const forgotResetBtn = document.getElementById('forgot-reset-btn');
       const forgotOtpBackBtn = document.getElementById('forgot-otp-back-btn');
       const forgotOtpMessage = document.getElementById('forgot-otp-message');
+      const mobileQrPanel = document.getElementById('mobile-qr-panel');
       const mobileQrPlaceholder = document.getElementById('mobile-qr-placeholder');
       const mobileQrImage = document.getElementById('mobile-qr-image');
       const mobileQrProductCode = document.getElementById('mobile-qr-product-code');
       const mobileQrStatusPath = document.getElementById('mobile-qr-status-path');
       const mobileQrRefreshBtn = document.getElementById('mobile-qr-refresh-btn');
       const mobileQrCopyBtn = document.getElementById('mobile-qr-copy-btn');
+      const mobileQrBackBtn = document.getElementById('mobile-qr-back-btn');
       const mobileQrMessage = document.getElementById('mobile-qr-message');
       let remainingInterval = null;
       let forgotAccount = null;
@@ -432,13 +459,39 @@
         el.className = 'message' + (type ? ' ' + type : '');
       }
 
+      function clearMobilePairingQr() {
+        mobilePairingText = '';
+        mobileQrProductCode.textContent = '--';
+        mobileQrStatusPath.textContent = '--';
+        mobileQrImage.removeAttribute('src');
+        mobileQrImage.classList.add('hidden');
+        mobileQrPlaceholder.classList.remove('hidden');
+        mobileQrPlaceholder.textContent = 'QR locked';
+        mobileQrCopyBtn.disabled = true;
+        setMessage(mobileQrMessage, '', '');
+      }
+
+      function resetMobilePortal(clearFields = true) {
+        if (clearFields) {
+          mobilePortalEmail.value = '';
+          mobilePortalPassword.value = '';
+        }
+        mobilePortalSubmitBtn.disabled = false;
+        mobilePortalForm.classList.remove('hidden');
+        mobileQrPanel.classList.add('hidden');
+        setMessage(mobilePortalMessage, '', '');
+        clearMobilePairingQr();
+      }
+
       function renderState(context) {
         clearRemainingTimer();
         licenseSection.classList.add('hidden');
         adminSection.classList.add('hidden');
         loginSection.classList.add('hidden');
+        mobileSection.classList.add('hidden');
         forgotSection.classList.add('hidden');
         forgotOtpSection.classList.add('hidden');
+        resetMobilePortal();
 
         if (!context) {
           stateBadge.textContent = 'Error';
@@ -464,7 +517,6 @@
         setMessage(loginMessage, '', '');
         renderRemaining(context.license?.expiresAt || context.expiresAt || null);
         loginSection.classList.remove('hidden');
-        loadMobilePairingQr();
       }
 
       async function loadMobilePairingQr() {
@@ -509,12 +561,28 @@
         }
       }
 
+      function showMobilePortal() {
+        clearRemainingTimer();
+        licenseSection.classList.add('hidden');
+        adminSection.classList.add('hidden');
+        loginSection.classList.add('hidden');
+        forgotSection.classList.add('hidden');
+        forgotOtpSection.classList.add('hidden');
+        mobileSection.classList.remove('hidden');
+        stateBadge.textContent = 'Mobile Connect';
+        resetMobilePortal(false);
+        mobilePortalEmail.value = document.getElementById('email').value.trim();
+        mobilePortalPassword.value = '';
+        mobilePortalEmail.focus();
+      }
+
       function showForgotSearch() {
         clearRemainingTimer();
         clearForgotOtpCooldown();
         licenseSection.classList.add('hidden');
         adminSection.classList.add('hidden');
         loginSection.classList.add('hidden');
+        mobileSection.classList.add('hidden');
         forgotOtpSection.classList.add('hidden');
         forgotSection.classList.remove('hidden');
         stateBadge.textContent = 'Forgot Password';
@@ -527,6 +595,7 @@
         licenseSection.classList.add('hidden');
         adminSection.classList.add('hidden');
         loginSection.classList.add('hidden');
+        mobileSection.classList.add('hidden');
         forgotSection.classList.add('hidden');
         forgotOtpSection.classList.remove('hidden');
         stateBadge.textContent = 'Password Reset';
@@ -633,6 +702,50 @@
           setMessage(loginMessage, 'Login failed.', 'error');
         } finally {
           submitBtn.disabled = false;
+        }
+      });
+
+      mobileConnectBtn.addEventListener('click', () => {
+        showMobilePortal();
+      });
+
+      mobileBackBtn.addEventListener('click', () => {
+        refreshContext();
+      });
+
+      mobilePortalForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const email = mobilePortalEmail.value.trim();
+        const password = mobilePortalPassword.value;
+
+        if (!email || !password) {
+          setMessage(mobilePortalMessage, 'Admin email and password are required.', 'error');
+          return;
+        }
+
+        if (!window.electronAPI?.mobilePairingLogin) {
+          setMessage(mobilePortalMessage, 'Mobile connect portal is not available.', 'error');
+          return;
+        }
+
+        mobilePortalSubmitBtn.disabled = true;
+        setMessage(mobilePortalMessage, '', '');
+        try {
+          const result = await window.electronAPI.mobilePairingLogin(email, password);
+          if (!result || !result.ok) {
+            setMessage(mobilePortalMessage, result?.message || 'Admin verification failed.', 'error');
+            return;
+          }
+
+          mobilePortalPassword.value = '';
+          setMessage(mobilePortalMessage, `Access granted for ${result.user?.username || result.user?.email || 'admin'}.`, 'ok');
+          mobilePortalForm.classList.add('hidden');
+          mobileQrPanel.classList.remove('hidden');
+          await loadMobilePairingQr();
+        } catch (error) {
+          setMessage(mobilePortalMessage, 'Admin verification failed.', 'error');
+        } finally {
+          mobilePortalSubmitBtn.disabled = false;
         }
       });
 
@@ -759,6 +872,10 @@
         } catch (error) {
           setMessage(mobileQrMessage, 'Copy failed.', 'error');
         }
+      });
+
+      mobileQrBackBtn.addEventListener('click', () => {
+        refreshContext();
       });
 
       refreshContext();
