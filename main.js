@@ -692,11 +692,11 @@ function createWindow() {
   if (!appIcon.isEmpty()) {
     mainWindow.setIcon(appIcon)
   }
-  // const indexPath = path.join(__dirname, 'renderer', 'build', 'index.html')
-  // mainWindow.loadFile(indexPath)
+  const indexPath = path.join(__dirname, 'renderer', 'build', 'index.html')
+  mainWindow.loadFile(indexPath)
 
   
-  mainWindow.loadURL("http://localhost:3000")
+  // mainWindow.loadURL("http://localhost:3000")
   
 }
 
