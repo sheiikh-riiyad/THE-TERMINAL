@@ -13,7 +13,7 @@
   },
   "keywords": [],
   "author": {
-    "name": "appdevloper.com",
+    "name": "Ninja Aetherion Dev",
     "email": "riiyad.san1819@gmail.com"
   },
   "license": "ISC",
@@ -38,7 +38,8 @@
     "productName": "The Terminal",
     "icon": "build/terminal.ico",
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "publisherName": "Ninja Aetherion Dev"
     },
     "nsis": {
       "oneClick": false,
