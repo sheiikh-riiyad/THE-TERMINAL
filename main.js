@@ -22,7 +22,7 @@ let dbBackupWatcher = null
 let dbBackupTimer = null
 let dbBackupInProgress = false;
 let dbBackupQueued = false
-const iconPath = path.join(__dirname, 'app.png')
+const iconPath = path.join(__dirname, 'terminal2.ico')
 const appIcon = nativeImage.createFromPath(iconPath)
 const SCALE_PORT = process.platform === 'win32' ? 'COM3 , COM4, COM2, COM1'  : '/dev/ttyUSB0'
 const SCALE_DECIMAL_POS = 2
